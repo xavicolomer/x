@@ -1,0 +1,17 @@
+{
+  "name": "nido-rooms",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Draw your rooms or a whole flat in 3D from their measurements, furnish them with real products, and work out paint and wallpaper. Runs offline in one HTML file.",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "serve": "python3 -m http.server 8080 --directory dist"
+  },
+  "dependencies": {
+    "three": "0.170.0"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.12"
+  }
+}
