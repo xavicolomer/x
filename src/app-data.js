@@ -268,8 +268,17 @@ const LOCAL_KEY = 'nido-drafts-v1';
 function localDrafts() { try { return JSON.parse(localStorage.getItem(LOCAL_KEY) || '{}') || {}; } catch (e) { return {}; } }
 function saveLocalDrafts() { try { localStorage.setItem(LOCAL_KEY, JSON.stringify(Object.fromEntries(S.drafts))); } catch (e) {} }
 async function connect() {
-  // inside claude.ai the platform provides these; anywhere else, the offline runtime keeps everything in this browser
-  const rt = window.claude && window.claude.use ? window.claude : typeof localRuntime !== 'undefined' ? localRuntime : null;
+  // inside claude.ai the platform provides these; on a site with a config.json naming an API, the AWS runtime;
+  // anywhere else (opened from disk, no API), the offline runtime keeps everything in this browser
+  let rt = window.claude && window.claude.use ? window.claude : null;
+  if (!rt && typeof awsRuntime !== 'undefined' && /^https?:$/.test(location.protocol)) {
+    try {
+      const r = await fetch('config.json', { cache: 'no-store' });
+      const cfg = r.ok ? await r.json() : null;
+      if (cfg && cfg.apiBase) { rt = awsRuntime(cfg); await rt.ready(); S.cloud = rt; }
+    } catch (e) {}
+  }
+  if (!rt && typeof localRuntime !== 'undefined') rt = localRuntime;
   S.offline = typeof localRuntime !== 'undefined' && rt === localRuntime;
   if (S.offline) { await localRuntime.ready(); blobResolver = localRuntime.urlFor; }
   const use = (n) => (rt ? rt.use(n).catch(() => null) : Promise.resolve(null));
@@ -281,6 +290,14 @@ async function connect() {
   }
   S.local = !S.db || !S.uid || S.canWrite === false;
   if (S.local) { for (const [k, v] of Object.entries(localDrafts())) S.drafts.set(k, cleanHome(v)); S.ready.drafts = true; }
+  else if (S.cloud) {                    // homes made in this browser before signing in move into the account
+    const waiting = Object.entries(localDrafts());
+    if (waiting.length) {
+      for (const [k, v] of waiting) await saveDraft(k, cleanHome(v));
+      try { localStorage.removeItem(LOCAL_KEY); } catch (e) {}
+      setTimeout(() => toast(`Moved ${waiting.length} home${waiting.length === 1 ? '' : 's'} from this browser into your account.`), 500);
+    }
+  }
   if (!S.db) { S.ready.homes = S.ready.shops = true; return; }
   const timer = setTimeout(() => { S.slow = true; render(); }, 10000);
   S.db.collection('homes').onSnapshot((snap) => {

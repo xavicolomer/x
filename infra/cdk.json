@@ -1,0 +1,6 @@
+{
+  "app": "node bin/nido.mjs",
+  "context": {
+    "@aws-cdk/aws-lambda-nodejs:useLatestRuntimeVersion": true
+  }
+}

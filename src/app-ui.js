@@ -65,12 +65,19 @@ function render() {
 }
 function renderWho() {
   const el = $('who');
+  if (S.cloud) {
+    if (!S.uid) { el.innerHTML = '<span>Your homes stay in this browser until you sign in</span><button type="button" class="btn small primary" id="sign-in">Sign in</button>'; return; }
+    el.innerHTML = `<img alt="" src="${esc(S.me.avatarUrl)}"><span></span><button type="button" class="btn small" id="sign-out">Sign out</button>`;
+    el.querySelector('span').textContent = S.me.name || 'You';
+    return;
+  }
   if (!S.user || !S.uid) { el.innerHTML = '<span>Not signed in · rooms stay in this browser</span>'; return; }
   const me = S.me;
   el.innerHTML = `<img alt="" src="${esc(me.avatarUrl)}"><span></span>`;
   el.querySelector('span').textContent = S.offline ? 'Offline · saved in this browser' : (me.name || 'You') + (S.local ? ' · view only' : '');
 }
 function accessNote() {
+  if (S.cloud) return S.uid ? '' : 'Sign in to keep your homes in your account and publish them. You can look around everything without one.';
   if (S.offline) return localRuntime.persistent ? '' : 'This browser isn’t letting Nido keep data (a private window, or storage turned off). Download your homes before closing it.';
   if (!S.db) return 'You’re trying Nido without a connection to the shared gallery. Rooms you make stay in this browser.';
   if (!S.uid) return 'Sign in to save rooms and publish them. You can still look around every room here.';
@@ -89,7 +96,7 @@ function renderExplore() {
   const g = $('gallery');
   if (!S.ready.homes) { g.innerHTML = '<p class="note">Loading rooms…</p>'; return; }
   if (!rooms.length) {
-    g.innerHTML = `<div class="empty" style="grid-column:1/-1"><b>No homes published yet</b><span>${S.offline ? 'Draw a room or a whole flat from its measurements, furnish it, then press Publish to keep it here. Homes opened from files appear in My homes.' : 'Draw a room or a whole flat from its measurements, furnish it, then press Publish. It will appear here for everyone with access to this page.'}</span><button type="button" class="btn primary" data-new-room>Draw your first room</button></div>`;
+    g.innerHTML = `<div class="empty" style="grid-column:1/-1"><b>No homes published yet</b><span>${S.offline ? 'Draw a room or a whole flat from its measurements, furnish it, then press Publish to keep it here. Homes opened from files appear in My homes.' : S.cloud ? 'Draw a room or a whole flat from its measurements, furnish it, then press Publish. Everyone who opens Nido will see it here.' : 'Draw a room or a whole flat from its measurements, furnish it, then press Publish. It will appear here for everyone with access to this page.'}</span><button type="button" class="btn primary" data-new-room>Draw your first room</button></div>`;
     return;
   }
   g.innerHTML = rooms.map(r => `<article class="card">
@@ -394,6 +401,8 @@ function productDialog(pid) {
 document.addEventListener('click', async (e) => {
   const t = e.target.closest('button, a'); if (!t || t.closest('#studio') || t.closest('#dlg')) return;
   if (t.hasAttribute('data-new-room')) { newRoomDialog(); return; }
+  if (t.id === 'sign-in') { S.cloud.signIn(); return; }
+  if (t.id === 'sign-out') { S.cloud.signOut(); return; }
   if (t.dataset.edit) { openEditor(t.dataset.edit); return; }
   if (t.dataset.openPub) { const [o, id] = t.dataset.openPub.split('|'); openViewer(o, id); return; }
   if (t.dataset.del) {

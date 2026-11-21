@@ -1,5 +1,6 @@
 // Builds two pages from src/:
 //   dist/nido.html         the offline app: one self-contained file (three.js, fonts and the IKEA catalogue inside)
+//   dist/web/index.html    the same file, deployed to AWS by infra/ (with a config.json it uses the API and Cognito)
 //   dist/nido-claude.html  the same app for claude.ai artifacts, loading three.js from a CDN and using the platform's shared store
 // Usage: npm run build
 import { build } from 'esbuild';
@@ -18,7 +19,7 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 `;
 const seed = `const IKEA_SEED = ${read('data/ikea-es.json').trim()};\n`;
-const app = read('engine.js').replace('/*@@FINISH@@*/', read('finish.js')) + '\n' + read('runtime-local.js') + '\n' + read('app-data.js') + '\n' + read('app-ui.js');
+const app = read('engine.js').replace('/*@@FINISH@@*/', read('finish.js')) + '\n' + read('runtime-local.js') + '\n' + read('runtime-aws.js') + '\n' + read('app-data.js') + '\n' + read('app-ui.js');
 const source = imports + seed + app;
 
 // index.html: everything before <header> belongs in <head>; the rest is the body. Drop its CDN import map and module script.
@@ -47,6 +48,9 @@ let fonts = read('fonts/fonts.css');
 for (const f of readdirSync(join(SRC, 'fonts')).filter(f => f.endsWith('.woff2'))) fonts = fonts.split(`url(${f})`).join(`url(data:font/woff2;base64,${readFileSync(join(SRC, 'fonts', f)).toString('base64')})`);
 const offlineHead = head.replace(/<link [^>]*fonts\.(googleapis|gstatic)\.com[^>]*>\n?/g, '').replace('<meta name="claude:viewport-fit-sides" content="cover">\n', '') + `<style>\n${fonts}</style>\n<style>[hidden]{display:none!important}body{margin:0}</style>`;
 writeFileSync(join(DIST, 'nido.html'), shell(offlineHead, `<script type="module">\n${safe(out.outputFiles[0].text)}</script>`));
+// The same file is the website for AWS: served with a config.json, it uses the API instead of this browser's storage.
+mkdirSync(join(DIST, 'web'), { recursive: true });
+writeFileSync(join(DIST, 'web', 'index.html'), readFileSync(join(DIST, 'nido.html')));
 
 // 2. claude.ai artifact: the page content only (the platform adds the document shell), three.js from the CDN.
 const artifactScript = `<script type="importmap">

@@ -27,7 +27,14 @@ npm run build
 This writes:
 
 - `dist/nido.html`: the offline app, one file (three.js, fonts and the IKEA catalogue inside).
+- `dist/web/index.html`: the same file, for the AWS website (see below).
 - `dist/nido-claude.html`: the same app as a claude.ai artifact, where homes and shops are shared with everyone the artifact is shared with.
+
+## Online, on AWS
+
+`infra/` deploys Nido as a website with sign-in, so homes are kept in people's accounts, Explore is shared and shops can list products. It's set up for proofs of concept: everything is pay per use (DynamoDB on-demand, Lambda, HTTP API, S3, CloudFront, Cognito Lite). See [infra/README.md](infra/README.md) to deploy it, or `cd infra && npm install && npm run dev` to try it locally without AWS.
+
+The same `nido.html` works in all three places. Opened from disk it keeps everything in the browser; served with a `config.json` that names an API, it signs people in and uses that API.
 
 `npm run serve` serves `dist/` at http://localhost:8080 if you prefer a local server.
 
@@ -40,7 +47,9 @@ This writes:
 | `src/finish.js` | Wall finishes: paint, patterns, panelling, wallpaper, rails, mouldings |
 | `src/app-data.js` | Data model (homes → rooms → walls, openings, items), templates, catalogue, storage calls |
 | `src/app-ui.js` | Screens: Explore, My homes, Catalogue, For shops, the 3D studio, paint and wallpaper amounts |
-| `src/runtime-local.js` | Offline storage (IndexedDB) used when the app isn't inside claude.ai |
+| `src/runtime-local.js` | Offline storage (IndexedDB), used when the file is opened from disk |
+| `src/runtime-aws.js` | AWS storage and Cognito sign-in, used when the site has a `config.json` |
+| `infra/` | AWS CDK stack, the API Lambda, a local dev server and API tests |
 | `src/data/ikea-es.json` | The bundled IKEA España catalogue |
 | `src/fonts/` | Bricolage Grotesque, Manrope and JetBrains Mono (Latin subsets) |
 | `tools/fetch_ikea.py` | Refreshes the IKEA data from ikea.com/es: `python3 tools/fetch_ikea.py src/data/ikea-es.json`, then `npm run build` |
