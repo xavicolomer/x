@@ -6,9 +6,12 @@
 import { build } from 'esbuild';
 import { readFileSync, writeFileSync, mkdirSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const SRC = new URL('./src/', import.meta.url).pathname, DIST = new URL('./dist/', import.meta.url).pathname;
-const read = (f) => readFileSync(join(SRC, f), 'utf8');
+// fileURLToPath, not URL.pathname: on Windows .pathname gives "/D:/..." and the build writes to "D:\D:\...".
+const SRC = fileURLToPath(new URL('./src/', import.meta.url)), DIST = fileURLToPath(new URL('./dist/', import.meta.url));
+// Normalise line endings: with git's autocrlf on Windows the sources arrive as CRLF, and the "\n" matches below would miss.
+const read = (f) => readFileSync(join(SRC, f), 'utf8').replace(/\r\n/g, '\n');
 mkdirSync(DIST, { recursive: true });
 
 // The app is written as one shared scope: the finish engine sits inside the 3D engine, then the data layer and the screens.
