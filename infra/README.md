@@ -60,7 +60,7 @@ This deletes everything, homes and uploads included, unless you deployed with `-
 ## Develop without AWS
 
 ```bash
-npm run dev        # http://localhost:8080
+npm run dev        # http://localhost:8080, or the next free port if 8080 is taken (it prints the address)
 npm test           # API tests
 ```
 

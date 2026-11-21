@@ -67,6 +67,15 @@ export function devApp({ dataFile = join(here, '.data.json') } = {}) {
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const port = Number(process.env.PORT || 8080);
-  createServer(devApp()).listen(port, () => console.log(`Nido dev server: http://localhost:${port}`));
+  // 8080 unless PORT says otherwise; if that port is taken by something else, try the next ones
+  const first = Number(process.env.PORT || 8080), handler = devApp();
+  const listen = (port) => {
+    const server = createServer(handler);
+    server.once('error', (e) => {
+      if (e.code === 'EADDRINUSE' && port < first + 20) { console.log(`Port ${port} is in use, trying ${port + 1}…`); listen(port + 1); }
+      else { console.error(e.message); process.exit(1); }
+    });
+    server.listen(port, () => console.log(`Nido dev server: http://localhost:${port}`));
+  };
+  listen(first);
 }
