@@ -1,0 +1,63 @@
+import { createServer } from 'node:http';
+import { devApp } from '../infra/dev/server.mjs';
+import { fileURLToPath } from 'node:url';
+import { join, dirname } from 'node:path';
+import { mkdirSync } from 'node:fs';
+const here = dirname(fileURLToPath(import.meta.url)), out = join(here, 'output'); mkdirSync(out, { recursive: true });
+import { createRequire } from 'node:module';
+const require = createRequire(import.meta.url);
+const { chromium } = require('playwright');
+const server = createServer(devApp({ dataFile: null })).listen(8099);
+const URL0 = 'http://localhost:8099/';
+const browser = await chromium.launch({ args: ['--use-gl=swiftshader'] });
+const person = async (name) => {
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 820 } });
+  const page = await ctx.newPage();
+  page.on('dialog', d => d.accept(name));
+  page.on('pageerror', e => console.log(name, 'pageerror:', e.message));
+  page.on('console', m => { if (m.type() === 'error') console.log(name, 'console:', m.text()); });
+  return page;
+};
+const c = (page, sel) => page.evaluate((s) => { const e = document.querySelector(s); if (!e) throw new Error('missing ' + s); e.click(); }, sel);
+const w = (page, ms = 600) => page.waitForTimeout(ms);
+
+const ana = await person('Ana');
+await ana.goto(URL0 + '#rooms'); await w(ana, 2500);
+console.log('who before sign-in:', (await ana.textContent('#who')).trim());
+await c(ana, '[data-new-room]'); await w(ana, 300); await c(ana, '[data-tpl="nursery"]'); await ana.fill('#nr-name', 'Habitación infantil');
+await c(ana, '#nr button[type=submit]'); await w(ana, 3000); await c(ana, '#st-back'); await w(ana, 500);
+await c(ana, '#sign-in'); await w(ana, 3500);
+console.log('who after sign-in:', (await ana.textContent('#who')).trim(), '| toast:', await ana.textContent('#toast'));
+await ana.evaluate(() => { location.hash = 'rooms'; }); await w(ana, 800);
+console.log('Ana homes:', await ana.evaluate(() => [...document.querySelectorAll('#my-rooms .t')].map(e => e.textContent)));
+// a shop with a photo
+await ana.evaluate(() => { location.hash = 'shop'; }); await w(ana, 800);
+await ana.fill('#shop-name', 'Casa Lino'); await c(ana, '#shop-form button[type=submit]'); await w(ana, 1200);
+await c(ana, '#add-product'); await w(ana, 300);
+await ana.fill('#pf-name', 'Lino sofa'); await ana.fill('#pf-w', '214'); await ana.fill('#pf-d', '92'); await ana.fill('#pf-h', '80'); await ana.fill('#pf-price', '1290');
+await ana.setInputFiles('#pf-photo', join(here, 'fixtures', 'pattern.jpg')); await w(ana, 1500);
+console.log('upload status:', await ana.textContent('#pf-status'));
+await c(ana, '#pf button[type=submit]'); await w(ana, 1500);
+// furnish and publish
+await ana.evaluate(() => { location.hash = 'rooms'; }); await w(ana, 800);
+await c(ana, '[data-edit]'); await w(ana, 3000);
+await c(ana, '[data-tab="furniture"]'); await w(ana, 300); await c(ana, '[data-act="addfurn"]'); await w(ana, 500);
+await ana.fill('#pick-q', 'lino'); await ana.dispatchEvent('#pick-q', 'input'); await w(ana, 300);
+await c(ana, '#pick-grid [data-add^="shop:dev-ana"]'); await c(ana, '#dlg [data-close]'); await w(ana, 1000);
+await c(ana, '#st-pub'); await ana.waitForFunction(() => document.querySelector('#st-pub')?.textContent.includes('Update'), null, { timeout: 60000 });
+await c(ana, '#st-back'); await w(ana, 500);
+// Bea sees it
+const bea = await person('Bea');
+await bea.goto(URL0 + '#explore'); await w(bea, 2500);
+await c(bea, '#sign-in'); await w(bea, 3500);
+await bea.evaluate(() => { location.hash = 'explore'; }); await w(bea, 1500);
+console.log('Bea explore:', (await bea.textContent('#gallery')).replace(/\s+/g, ' ').trim().slice(0, 140));
+console.log('cover loads:', await bea.evaluate(() => { const i = document.querySelector('#gallery img'); return !!i && i.complete && i.naturalWidth > 0; }));
+await bea.screenshot({ path: join(out, 'a1-bea-explore.png') });
+await c(bea, '[data-open-pub]'); await w(bea, 3500);
+console.log('Bea viewer list:', (await bea.textContent('#pane')).replace(/\s+/g, ' ').match(/Lino sofa.{0,40}/)?.[0]);
+await c(bea, '#st-copy'); await w(bea, 3000);
+await c(bea, '#st-back'); await bea.evaluate(() => { location.hash = 'rooms'; }); await w(bea, 1000);
+console.log('Bea homes:', await bea.evaluate(() => [...document.querySelectorAll('#my-rooms .t')].map(e => e.textContent)));
+console.log('Ana still has 1 draft:', await ana.evaluate(() => document.querySelectorAll('#my-rooms .card').length));
+await browser.close(); server.close();

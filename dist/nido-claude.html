@@ -2012,7 +2012,7 @@ function clampItem(r, it) {
   const lx = -r.w / 2 + f.w / 2, hx = r.w / 2 - f.w / 2, lz = -r.l / 2 + f.d / 2, hz = r.l / 2 - f.d / 2;
   return { x: lx > hx ? 0 : clamp(it.x, lx, hx), z: lz > hz ? 0 : clamp(it.z, lz, hz) };
 }
-/* A layout file downloaded from the earlier Room Planner (or a Nido room file). */
+/* A layout file downloaded from the earlier single-room planner (or a Nido room file). */
 function fromPlannerFile(text) {
   let j; try { j = JSON.parse(text); } catch (e) { return null; }
   if (j && j.app === 'nido-room' && j.room) return cleanHome(j.room);

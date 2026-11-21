@@ -6,12 +6,15 @@
   "type": "module",
   "scripts": {
     "build": "node build.mjs",
-    "serve": "python3 -m http.server 8080 --directory dist"
+    "serve": "python3 -m http.server 8080 --directory dist",
+    "test": "cd infra && npm test",
+    "test:e2e": "node tests/e2e-offline.cjs && node tests/e2e-aws.mjs"
   },
   "dependencies": {
     "three": "0.170.0"
   },
   "devDependencies": {
-    "esbuild": "0.25.12"
+    "esbuild": "0.25.12",
+    "playwright": "1.63.0"
   }
 }
