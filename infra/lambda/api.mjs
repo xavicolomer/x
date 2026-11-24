@@ -11,6 +11,7 @@ import { S3Client } from '@aws-sdk/client-s3';
 import { createPresignedPost } from '@aws-sdk/s3-presigned-post';
 import { randomBytes } from 'node:crypto';
 import ikea from '../../src/data/ikea-es.json' with { type: 'json' };
+import serveiEstacio from '../../src/data/servei-estacio.json' with { type: 'json' };
 
 const MAX_DOC = 350 * 1024;              // DynamoDB items are at most 400 KB
 const MAX_SUMMARY = 4 * 1024;
@@ -19,7 +20,7 @@ export const UPLOAD_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'i
 const ID = /^[\w-]{1,60}$/, OWNER = /^[\w-]{1,80}$/;
 
 /* Catalogues that ship with the app (read-only, so they cost nothing to store). */
-export const BUILTIN_SHOPS = [{ id: 'ikea-es', doc: JSON.stringify(ikea) }];
+export const BUILTIN_SHOPS = [{ id: 'ikea-es', doc: JSON.stringify(ikea) }, { id: 'servei-estacio', doc: JSON.stringify(serveiEstacio) }];
 
 /* db: a DynamoDB document client (anything with send(command)); presign({ key, type }) -> { url, fields }. */
 export function makeHandler({ db, presign, table, now = () => Date.now(), builtinShops = BUILTIN_SHOPS }) {
@@ -103,10 +104,13 @@ export function makeHandler({ db, presign, table, now = () => Date.now(), builti
           await db.send(new DeleteCommand({ TableName: table, Key: { PK: `USER#${u.sub}`, SK: `DRAFT#${p.id}` } }));
           return json(200, { ok: true });
         }
-        case 'PUT /api/shops/me': {
+        case 'PUT /api/shops/me':
+        case 'PUT /api/shops/{id}': {             // your own shop; admins can also keep a vendor that isn't on Nido itself
+          const id = route === 'PUT /api/shops/me' ? u.sub : p.id;
+          if (id !== u.sub && !u.admin) return fail(403, 'Only Nido’s admins can edit another vendor');
           const b = readBody(ev), doc = b && docString(b.doc);
           if (!doc) return fail(400, 'The shop is missing or too big');
-          await db.send(new PutCommand({ TableName: table, Item: { PK: `SHOP#${u.sub}`, SK: 'SHOP', GSI1PK: 'SHOPS', GSI1SK: u.sub, id: u.sub, owner: u.sub, doc, updatedAt: now() } }));
+          await db.send(new PutCommand({ TableName: table, Item: { PK: `SHOP#${id}`, SK: 'SHOP', GSI1PK: 'SHOPS', GSI1SK: id, id, owner: id === u.sub ? u.sub : 'nido', editedBy: u.sub, doc, updatedAt: now() } }));
           return json(200, { ok: true });
         }
         case 'POST /api/uploads': {

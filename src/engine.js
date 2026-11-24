@@ -603,12 +603,29 @@ function showSelection() {
   selBox.scale.set(d.w + 0.02, Math.max(0.02, it.p.h + 0.01), d.d + 0.02);
 }
 function selectItem(id) { selId = id; showSelection(); engineHooks.onSelect(id); }
+/* The wall the Walls tab is editing, tinted in the selection colour so picking a wall doesn't have to move the view.
+   showWall({ r, wid, z0, z1 }) for that wall between two heights, showWall(null) to clear it. */
+const wallFill = new THREE.MeshBasicMaterial({ color: 0x2c6b58, transparent: true, opacity: 0.3, depthWrite: false, side: THREE.DoubleSide });   // walls are pale in both themes, so a fixed dark green
+const wallSel = new THREE.Group();
+wallSel.add(ghost(new THREE.Mesh(new THREE.PlaneGeometry(1, 1), wallFill)), ghost(new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.PlaneGeometry(1, 1)), hlMat)));
+wallSel.visible = false; scene.add(wallSel);
+let selWall = null, wallFlash = 0;
+function showWall(m) {
+  const same = m && selWall && m.r.id === selWall.r.id && m.wid === selWall.wid && m.z0 === selWall.z0 && m.z1 === selWall.z1;
+  selWall = m;
+  if (!m) return;
+  if (!same) wallFlash = performance.now();       // a new pick flashes; editing the same wall doesn't
+  const len = m.wid === 'back' || m.wid === 'front' ? m.r.w : m.r.l;
+  wallSel.position.copy(roomOffset(m.r).add(wallPointOf(m.r, m.wid, len / 2, (m.z0 + m.z1) / 2, 0.035)));   // in front of padded panels (3.2 cm)
+  wallSel.rotation.y = frameOf(m.r, m.wid).rot;
+  wallSel.scale.set(len, m.z1 - m.z0, 1);
+}
 
 /* ---------- Picking and dragging: furniture inside its room; whole rooms in the plan ---------- */
 const canvas = renderer.domElement;
 const ray = new THREE.Raycaster(), ndc = new THREE.Vector2(), floorPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), hit = new THREE.Vector3();
 let drag = null, down = null;
-const engineHooks = { onSelect: () => {}, onWall: () => {}, onChange: () => {}, onRoomTap: () => {}, onRoomMoved: () => {} };
+const engineHooks = { onSelect: () => {}, onWall: () => {}, onChange: () => {}, onRoomTap: () => {}, onRoomMoved: () => {}, onToolTap: () => {} };
 function aim(e) {
   const r = canvas.getBoundingClientRect();
   ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
@@ -627,6 +644,92 @@ function pick() {
   }
   return null;
 }
+/* ---------- Tools: Select (the default), Measure and Paint ----------
+   Measure and Paint only read the home: a tap reports the face it hit, and nothing is dragged or selected. */
+let tool = 'select';
+function setTool(t) { tool = t; selectItem(null); clearMeasure(); markSurfaces([]); canvas.style.cursor = t === 'select' ? 'grab' : 'crosshair'; }
+const normalMat = new THREE.Matrix3();
+/* The face under the pointer: the point, its outward normal in the home's space, and what it belongs to (if anything). */
+function pickFace() {
+  for (const h of ray.intersectObjects([homeGroup], true)) {
+    if (!shown(h.object) || !h.face) continue;
+    const out = { point: h.point.clone(), normal: h.face.normal.clone().applyMatrix3(normalMat.getNormalMatrix(h.object.matrixWorld)).normalize() };
+    let o = h.object;
+    while (o && !o.userData.itemId && !o.userData.wallId && !o.userData.floor) o = o.parent;
+    if (o && o.userData.itemId) out.item = o.userData.itemId;
+    else if (o && o.userData.wallId) { out.wall = o.userData.wallId; out.room = o.userData.roomId; }
+    else if (o) out.floor = o.userData.floor;
+    return out;
+  }
+  return null;
+}
+/* Distance from face a to face b. Straight out from a, so for two parallel faces (a wall and the side of a wardrobe)
+   it doesn't matter where on b you tap. When both points lie on the same face, the straight line between them. */
+function measureBetween(a, b) {
+  const off = b.point.clone().sub(a.point), s = off.dot(a.normal);
+  if (Math.abs(s) < 0.01) return { d: off.length(), from: a.point.clone(), to: b.point.clone(), along: true };
+  return { d: Math.abs(s), from: b.point.clone().addScaledVector(a.normal, -s), to: b.point.clone(), along: false };
+}
+const measureGroup = new THREE.Group(), markGroup = new THREE.Group();
+scene.add(measureGroup, markGroup);
+const toolMat = new THREE.MeshBasicMaterial({ color: 0xa5543f, depthTest: false }), toolLine = new THREE.LineBasicMaterial({ color: 0xa5543f, depthTest: false });
+const markMat = new THREE.MeshBasicMaterial({ color: 0xa5543f, transparent: true, opacity: 0.3, depthWrite: false, side: THREE.DoubleSide });
+const dotGeo = new THREE.SphereGeometry(0.025, 14, 10);
+const measureLabel = document.createElement('div');
+measureLabel.className = 'mlabel'; measureLabel.hidden = true; stage.appendChild(measureLabel);
+let measureMid = null;
+function clearMeasure() {
+  for (const c of measureGroup.children) if (c.isLine) c.geometry.dispose();
+  measureGroup.clear(); measureLabel.hidden = true; measureMid = null;
+}
+/* Dots on the tapped points and, once there are two, the line that was measured with its length on it. */
+function drawMeasure(dots, line, text) {
+  clearMeasure();
+  for (const p of dots) { const m = ghost(new THREE.Mesh(dotGeo, toolMat)); m.position.copy(p); m.renderOrder = 10; measureGroup.add(m); }
+  if (line) {
+    const l = ghost(new THREE.Line(new THREE.BufferGeometry().setFromPoints(line), toolLine)); l.renderOrder = 10; measureGroup.add(l);
+    measureMid = line[0].clone().lerp(line[1], 0.5); measureLabel.textContent = text;
+  }
+}
+/* Tint the surfaces chosen for painting: [{ r, wid, z0, z1 }] for part of a wall, [{ r, it }] for a piece of furniture. */
+function markSurfaces(list) {
+  for (const c of markGroup.children) c.geometry.dispose();
+  markGroup.clear();
+  for (const m of list) {
+    let mesh;
+    if (m.it) {
+      const d = fp(m.it);
+      mesh = new THREE.Mesh(new THREE.BoxGeometry(d.w + 0.02, m.it.p.h + 0.01, d.d + 0.02), markMat);
+      mesh.position.set(m.r.x + m.it.x, m.it.p.h / 2 + 0.005, m.r.z + m.it.z);
+    } else {
+      const len = m.wid === 'back' || m.wid === 'front' ? m.r.w : m.r.l;
+      mesh = new THREE.Mesh(new THREE.PlaneGeometry(len, m.z1 - m.z0), markMat);
+      mesh.position.copy(roomOffset(m.r).add(wallPointOf(m.r, m.wid, len / 2, (m.z0 + m.z1) / 2, 0.006)));
+      mesh.rotation.y = frameOf(m.r, m.wid).rot;
+      mesh.userData.wall = m.wid;
+    }
+    mesh.userData.room = m.r.id;
+    markGroup.add(ghost(mesh));
+  }
+}
+const labelV = new THREE.Vector3();
+function updateToolMarks() {
+  for (const m of markGroup.children) {        // a tint on a cut-away wall would float in the air
+    const w = m.userData.wall && walls.find(x => x.roomId === m.userData.room && x.id === m.userData.wall);
+    m.visible = (!focus || m.userData.room === focus) && (!w || w.full.visible);
+  }
+  const sw = selWall && walls.find(x => x.roomId === selWall.r.id && x.id === selWall.wid);
+  wallSel.visible = !!sw && sw.full.visible && (!focus || selWall.r.id === focus);
+  // the tint shows for a second, then fades to the outline, so the finish being chosen reads in its true colour
+  wallFill.opacity = 0.3 * Math.max(0, Math.min(1, (1.6 - (performance.now() - wallFlash) / 1000) / 0.6));
+  wallSel.children[0].visible = wallFill.opacity > 0;
+  if (!measureMid) return;
+  labelV.copy(measureMid).project(cam);
+  measureLabel.hidden = labelV.z > 1;
+  measureLabel.style.left = ((labelV.x + 1) / 2 * stage.clientWidth) + 'px';
+  measureLabel.style.top = ((1 - labelV.y) / 2 * stage.clientHeight) + 'px';
+}
+
 /* Snap a room's edges to its neighbours': flush with a 10 cm wall between, or lined up. */
 function snapRoom(r, x, z) {
   const S = 0.18, gap = 0.1;
@@ -645,6 +748,7 @@ canvas.addEventListener('pointerdown', (e) => {
   aim(e);
   down = { x: e.clientX, y: e.clientY };
   tween = null;
+  if (tool !== 'select') return;               // Measure and Paint act on a tap, in endDrag
   const p = pick();
   if (!p) return;
   const arranging = editable && mode === 'plan' && !focus && HOME.rooms.length > 1;
@@ -683,6 +787,7 @@ canvas.addEventListener('pointermove', (e) => {
     return;
   }
   if (e.pointerType !== 'mouse') return;
+  if (tool !== 'select') { canvas.style.cursor = 'crosshair'; return; }
   const p = pick();
   canvas.style.cursor = p && (p.item || (editable && p.wall)) ? 'pointer' : p && p.floor && editable && mode === 'plan' && !focus && HOME && HOME.rooms.length > 1 ? 'move' : 'grab';
 });
@@ -696,6 +801,7 @@ function endDrag(e) {
   }
   if (down && Math.hypot(e.clientX - down.x, e.clientY - down.y) < 5) {       // a tap, not an orbit
     aim(e);
+    if (tool !== 'select') { down = null; engineHooks.onToolTap(tool, pickFace()); return; }
     const p = pick();
     if (p && p.wall) engineHooks.onWall(p.room, p.wall);
     else if (p && p.floor && !focus) { selectItem(null); engineHooks.onRoomTap(p.floor); }
@@ -786,6 +892,7 @@ renderer.setAnimationLoop(() => {
   }
   if (mode === '3d') orbit.update(); else pan.update();
   updateWalls();
+  updateToolMarks();
   renderer.render(scene, cam);
 });
 
@@ -794,6 +901,7 @@ function showHome(home, opts = {}) {
   HOME = home; editable = !!opts.editable;
   focus = opts.focus && home.rooms.some(r => r.id === opts.focus) ? opts.focus : null;
   selId = null; selBox.visible = false;
+  tool = 'select'; clearMeasure(); markSurfaces([]); showWall(null);
   buildRoom();
   running = true;
   setMode('3d');

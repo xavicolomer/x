@@ -172,10 +172,12 @@ function faceRects(len, v0, v1, ops) {
   return out;
 }
 /* Moulding panels that fit the stretches of wall between openings. With count, that many panels shared between
-   the stretches by length; otherwise as many as the target panel width allows. */
-function autoColumns(len, blocks, v0, v1, panelW, count) {
-  const edge = 0.12, gap = 0.1, free = [];
-  const bl = blocks.filter(o => o.v0 < v1 && o.v1 > v0).map(o => [o.u0 - 0.12, o.u1 + 0.12]).sort((a, b) => a[0] - b[0]);
+   the stretches by length; otherwise as many as the target panel width allows.
+   opt.pad: the space kept at the ends of the wall and around openings (12 cm); opt.gap: between panels (10 cm).
+   opt.w fixes the panels' width instead: each stretch's panels are centred in it, so the padding is what's left over. */
+function autoColumns(len, blocks, v0, v1, panelW, count, opt = {}) {
+  const fixed = opt.w > 0, edge = fixed ? 0.03 : opt.pad ?? 0.12, gap = opt.gap ?? 0.1, free = [];
+  const bl = blocks.filter(o => o.v0 < v1 && o.v1 > v0).map(o => [o.u0 - edge, o.u1 + edge]).sort((a, b) => a[0] - b[0]);
   let cur = edge;
   for (const [b0, b1] of bl) { if (b0 - cur > 0.25) free.push([cur, b0]); cur = Math.max(cur, b1); }
   if (len - edge - cur > 0.25) free.push([cur, len - edge]);
@@ -189,8 +191,9 @@ function autoColumns(len, blocks, v0, v1, panelW, count) {
   const out = [];
   free.forEach(([f0, f1], i) => {
     const n = counts[i]; if (!n) return;
-    const pw = (f1 - f0 - gap * (n - 1)) / n;
-    for (let k = 0; k < n; k++) out.push({ u: f0 + k * (pw + gap), w: pw });
+    const fill = (f1 - f0 - gap * (n - 1)) / n, pw = fixed ? Math.min(opt.w, fill) : fill;
+    const start = f0 + (f1 - f0 - n * pw - gap * (n - 1)) / 2;          // f0 when the panels fill the stretch
+    for (let k = 0; k < n; k++) out.push({ u: start + k * (pw + gap), w: pw });
   });
   return out;
 }
@@ -249,7 +252,7 @@ function finishGroup(cfg, len, hMax, ops, blocks) {
     let cur = 0;
     const seg = (u0, u1) => {
       if (u1 - u0 < 0.01) return;
-      if (cfg.railStyle === 'straight') put(g, box(u1 - u0, 0.045, 0.022, mat, false), (u0 + u1) / 2, y, 0.011);
+      if (cfg.railStyle === 'straight') { const rm = cfg.railM, rf = rm ? rm.face : 0.045, rd = rm ? rm.depth : 0.022; put(g, box(u1 - u0, rf, rd, mat, false), (u0 + u1) / 2, y, rd / 2); }
       else solid(railShape(u0, u1, y, cfg.railStyle, cfg.railSize), mat, 0.014, 0.002, g);
     };
     for (const o of bl) { seg(cur, o.u0 - 0.045); cur = o.u1 + 0.045; }
@@ -268,7 +271,7 @@ function finishGroup(cfg, len, hMax, ops, blocks) {
     const mould = std(mouldColor(z), style === 'soft' ? 0.95 : 0.5);
     mould.userData.own = true;
     const plain = defaultFinish({ color: mouldColor(z) });
-    const mw = 0.035;
+    const shopM = style === 'mould' && z.moulding, mw = shopM ? shopM.face : 0.035, md = shopM ? shopM.depth : 0.016;   // a shop's moulding at its own size
     const bl = (blocks || ops).filter(o => o.v0 < v1 && o.v1 > v0);
     const cols = z.panels
       ? z.panels.map((q, i) => ({ u: q.u, w: q.w, i })).filter(c => c.u + c.w <= len + 0.001 && !bl.some(o => c.u < o.u1 + 0.02 && c.u + c.w > o.u0 - 0.02))
@@ -277,7 +280,7 @@ function finishGroup(cfg, len, hMax, ops, blocks) {
       const pg = new THREE.Group();
       pg.userData.panel = c.i; pg.userData.zone = key;          // draggable along the wall
       g.add(pg);
-      const u0 = c.u, u1 = c.u + c.w, zz = 0.009, zb = { u0: 0, u1: len, v0, v1 };
+      const u0 = c.u, u1 = c.u + c.w, zz = 0.001 + md / 2, zb = { u0: 0, u1: len, v0, v1 };
       const ry = Math.min(c.w / 2, (v1 - v0) * 0.45);
       if (style === 'soft') {               // upholstered pads with rounded corners
         const pad = new THREE.Mesh(new RoundedBoxGeometry(c.w, v1 - v0, 0.032, 4, Math.min(0.05, c.w / 2 - 0.001)), z.inner && z.inner.type === 'paint' ? std(z.inner.color, 0.95) : mould);
@@ -292,10 +295,10 @@ function finishGroup(cfg, len, hMax, ops, blocks) {
         solid(outer, mould, 0.016, 0.001, pg); continue;
       }
       if (z.inner) rect(u0, u1, v0, v1, z.inner, 0.003, pg, zb);
-      put(pg, box(c.w + mw, mw, 0.016, mould), (u0 + u1) / 2, v1, zz);
-      put(pg, box(c.w + mw, mw, 0.016, mould), (u0 + u1) / 2, v0, zz);
-      put(pg, box(mw, v1 - v0, 0.016, mould), u0, (v0 + v1) / 2, zz);
-      put(pg, box(mw, v1 - v0, 0.016, mould), u1, (v0 + v1) / 2, zz);
+      put(pg, box(c.w + mw, mw, md, mould), (u0 + u1) / 2, v1, zz);
+      put(pg, box(c.w + mw, mw, md, mould), (u0 + u1) / 2, v0, zz);
+      put(pg, box(mw, v1 - v0, md, mould), u0, (v0 + v1) / 2, zz);
+      put(pg, box(mw, v1 - v0, md, mould), u1, (v0 + v1) / 2, zz);
     }
   }
   if (cfg.layout === 'split' && cfg.rail && cfg.split < hMax - 0.03)
@@ -304,9 +307,13 @@ function finishGroup(cfg, len, hMax, ops, blocks) {
 }
 /* Where a part's frames go: inside the part, clear of the skirting, the rail and the ceiling. */
 function frameSpan(cfg, key, hMax) {
-  const sp = cfg.layout === 'split';
-  if (key === 'lo') return [0.17, sp ? Math.min(cfg.split, hMax) - 0.09 : hMax - 0.16];
-  return [cfg.split + 0.1, hMax - 0.16];
+  const sp = cfg.layout === 'split', z = cfg[key];
+  const def = key === 'lo' ? [0.17, sp ? Math.min(cfg.split, hMax) - 0.09 : hMax - 0.16] : [cfg.split + 0.1, hMax - 0.16];
+  if (!z || !z.panelH) return def;
+  // a height of the user's own: centred where the panels would sit, kept between the skirting, the rail and the ceiling
+  const r = sp && cfg.rail ? 0.03 : 0, e0 = key === 'lo' ? 0.07 : cfg.split + r, e1 = key === 'lo' && sp ? Math.min(cfg.split, hMax) - r : hMax;
+  const h = Math.min(z.panelH, e1 - e0), m = Math.min(Math.max((def[0] + def[1]) / 2, e0 + h / 2), e1 - h / 2);
+  return [m - h / 2, m + h / 2];
 }
 function mouldColor(z) {
   if (z.mould) return z.mould;

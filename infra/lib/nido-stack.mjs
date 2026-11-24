@@ -119,7 +119,7 @@ export class NidoStack extends Stack {
     route(M.GET, '/api/homes'); route(M.GET, '/api/homes/{owner}/{id}'); route(M.GET, '/api/shops');
     route(M.PUT, '/api/homes/{id}', true); route(M.DELETE, '/api/homes/{owner}/{id}', true);
     route(M.GET, '/api/me/drafts', true); route(M.PUT, '/api/me/drafts/{id}', true); route(M.DELETE, '/api/me/drafts/{id}', true);
-    route(M.PUT, '/api/shops/me', true); route(M.POST, '/api/uploads', true);
+    route(M.PUT, '/api/shops/me', true); route(M.PUT, '/api/shops/{id}', true); route(M.POST, '/api/uploads', true);
 
     // ----- the app itself, plus the config it reads to find the API and sign-in -----
     new s3deploy.BucketDeployment(this, 'DeploySite', {

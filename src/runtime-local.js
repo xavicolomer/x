@@ -35,10 +35,10 @@ const localRuntime = (() => {
       for (const [k, v] of await all('docs')) docs.set(k, v);
       for (const [k, v] of await all('blobs')) { blobs.set(k, v); urls.set(k, URL.createObjectURL(v)); }
     }
-    // the bundled catalogue, refreshed when the bundled copy is newer
-    if (typeof IKEA_SEED !== 'undefined') {
-      const cur = docs.get('shops/ikea-es');
-      if (!cur || (cur.updatedAt || 0) < IKEA_SEED.updatedAt) { docs.set('shops/ikea-es', IKEA_SEED); put('docs', 'shops/ikea-es', IKEA_SEED); }
+    // the bundled catalogues, refreshed when the bundled copy is newer
+    if (typeof SHOP_SEEDS !== 'undefined') for (const [id, seed] of Object.entries(SHOP_SEEDS)) {
+      const cur = docs.get('shops/' + id);
+      if (!cur || (cur.updatedAt || 0) < seed.updatedAt) { docs.set('shops/' + id, seed); put('docs', 'shops/' + id, seed); }
     }
   })());
   const segs = (p) => p.split('/');

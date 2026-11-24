@@ -21,8 +21,8 @@ import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.j
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 `;
-const seed = `const IKEA_SEED = ${read('data/ikea-es.json').trim()};\n`;
-const app = read('engine.js').replace('/*@@FINISH@@*/', read('finish.js')) + '\n' + read('runtime-local.js') + '\n' + read('runtime-aws.js') + '\n' + read('app-data.js') + '\n' + read('app-ui.js');
+const seed = `const SHOP_SEEDS = { 'ikea-es': ${read('data/ikea-es.json').trim()}, 'servei-estacio': ${read('data/servei-estacio.json').trim()} };\n`;
+const app = read('engine.js').replace('/*@@FINISH@@*/', read('finish.js')) + '\n' + read('runtime-local.js') + '\n' + read('runtime-aws.js') + '\n' + read('app-data.js') + '\n' + read('catalog.js') + '\n' + read('app-ui.js');
 const source = imports + seed + app;
 
 // index.html: everything before <header> belongs in <head>; the rest is the body. Drop its CDN import map and module script.

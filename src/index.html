@@ -106,6 +106,7 @@ h2 { margin: 0; font-family: var(--font-display); font-size: 19px; font-weight: 
 .in textarea { resize: vertical; min-height: 60px; }
 .fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
 .fields.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .check { display: flex; align-items: center; gap: 8px; cursor: pointer; font-weight: 600; }
 .box-card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 18px; display: flex; flex-direction: column; gap: 14px; }
 .split2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 18px; align-items: start; }
@@ -139,7 +140,7 @@ h2 { margin: 0; font-family: var(--font-display); font-size: 19px; font-weight: 
 .rname:focus { background: var(--surface-2); outline: none; }
 .sbar .spacer { flex: 1; }
 .save-state { font-size: 12px; color: var(--muted); padding: 0 6px; }
-.side { position: absolute; z-index: 4; top: calc(66px + env(safe-area-inset-top, 0px)); left: max(12px, env(safe-area-inset-left, 0px)); bottom: calc(12px + env(safe-area-inset-bottom, 0px)); width: 340px;
+.side { position: absolute; z-index: 4; top: calc(var(--bar, 46px) + 20px + env(safe-area-inset-top, 0px)); left: max(12px, env(safe-area-inset-left, 0px)); bottom: calc(12px + env(safe-area-inset-bottom, 0px)); width: 340px;
   background: var(--surface); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); display: flex; flex-direction: column; overflow: hidden; }
 .side .tabs { display: flex; gap: 2px; padding: 6px; border-bottom: 1px solid var(--line); }
 .side .tabs button { flex: 1; border: 0; background: transparent; padding: 7px 4px; border-radius: 7px; font-weight: 700; color: var(--muted); cursor: pointer; font-size: 12.5px; }
@@ -168,17 +169,25 @@ h2 { margin: 0; font-family: var(--font-display); font-size: 19px; font-weight: 
 .thumbs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
 .thumbs button, .thumbs label { aspect-ratio: 1; border-radius: 8px; border: 1px solid var(--line); background: var(--surface-2) center / cover no-repeat; cursor: pointer; padding: 0; display: grid; place-items: center; color: var(--muted); font-size: 20px; }
 .thumbs button[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--accent); }
-.props { position: absolute; z-index: 4; right: max(12px, env(safe-area-inset-right, 0px)); top: calc(66px + env(safe-area-inset-top, 0px)); width: 290px; max-height: calc(100% - 90px); overflow: auto;
+.props { position: absolute; z-index: 4; right: max(12px, env(safe-area-inset-right, 0px)); top: calc(var(--bar, 46px) + 20px + env(safe-area-inset-top, 0px)); width: 290px; max-height: calc(100% - var(--bar, 46px) - 44px); overflow: auto;
   background: var(--surface); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); padding: 14px; display: flex; flex-direction: column; gap: 10px; }
 .props h3 { margin: 0; font-size: 15px; }
 .kv { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; font-size: 13px; }
 .kv dt { color: var(--muted); } .kv dd { margin: 0; text-align: right; }
 .total { display: flex; justify-content: space-between; align-items: baseline; font-weight: 800; border-top: 1px solid var(--line); padding-top: 8px; }
 .toast { position: fixed; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); background: var(--fg); color: var(--bg); padding: 9px 16px; border-radius: 10px; z-index: 90; font-weight: 600; box-shadow: var(--shadow); max-width: calc(100% - 32px); }
+.mlabel { position: absolute; z-index: 2; transform: translate(-50%, -140%); background: #a5543f; color: #fff; font-weight: 800; font-size: 13px; padding: 3px 8px; border-radius: 7px; pointer-events: none; white-space: nowrap; font-variant-numeric: tabular-nums; box-shadow: var(--shadow); }
+.measure { font-size: 28px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.surf { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.surf .tx { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.surf .tx b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.surf .tx small { color: var(--muted); font-size: 11.5px; }
 .hint { position: absolute; z-index: 3; bottom: calc(14px + env(safe-area-inset-bottom, 0px)); left: 50%; transform: translateX(-50%); color: var(--muted); font-size: 12px; background: var(--surface); border-radius: 8px; padding: 5px 10px; border: 1px solid var(--line); white-space: nowrap; }
 @media (max-width: 760px) {
   .side { top: auto; left: 0; right: 0; bottom: 0; width: auto; height: 46%; border-radius: 14px 14px 0 0; padding-bottom: env(safe-area-inset-bottom, 0px); }
-  .props { left: max(12px, env(safe-area-inset-left, 0px)); right: max(12px, env(safe-area-inset-right, 0px)); width: auto; top: auto; bottom: calc(46% + 8px); max-height: 34%; }
+  .props { left: max(12px, env(safe-area-inset-left, 0px)); right: max(12px, env(safe-area-inset-right, 0px)); width: auto; top: auto; bottom: calc(46% + 8px); max-height: min(34%, calc(54% - var(--bar, 46px) - 36px)); }
+  /* Measure and Paint take the bottom sheet's place, so the room above stays free to tap */
+  .props.tool { left: 0; right: 0; bottom: 0; height: 46%; max-height: none; border-radius: 14px 14px 0 0; padding-bottom: calc(14px + env(safe-area-inset-bottom, 0px)); z-index: 5; }
   .hint { display: none; }
   .rname { width: 140px; }
   .fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -248,17 +257,21 @@ h2 { margin: 0; font-family: var(--font-display); font-size: 19px; font-weight: 
     <div class="head">
       <div>
         <h1>For shops</h1>
-        <p id="shop-intro">List your products with their real sizes, a photo and a link to buy. People place them in their own rooms and see how they fit before they order. Wallpaper with its repeat and roll size shows up on walls, with the number of rolls worked out for them.</p>
+        <p id="shop-intro">List your products with their specs, a photo, a price and a link to buy. Furniture goes into people's rooms at its real size; wallpaper, paint and mouldings go on their walls, with the rolls, tins or strips they need worked out for them.</p>
       </div>
     </div>
     <div class="split2">
       <form class="box-card" id="shop-form" autocomplete="off">
-        <h2>Your shop</h2>
-        <label class="field" for="shop-name"><span>Shop name</span><span class="in"><input id="shop-name" maxlength="60" required></span></label>
+        <div style="display:flex;justify-content:space-between;align-items:end;gap:10px;flex-wrap:wrap"><h2 id="shop-title">Your shop</h2>
+          <label class="field" for="vendor-pick" id="vendor-pick-wrap" hidden><span>Vendor</span><span class="in"><select id="vendor-pick"></select></span></label></div>
+        <label class="field" for="shop-name"><span>Name</span><span class="in"><input id="shop-name" maxlength="60" required></span></label>
         <label class="field" for="shop-url"><span>Website</span><span class="in"><input id="shop-url" type="url" maxlength="200" placeholder="https://"></span></label>
         <label class="field" for="shop-about"><span>About</span><span class="in"><textarea id="shop-about" maxlength="400" placeholder="What you make or sell, where you ship"></textarea></span></label>
         <div class="uploader"><div class="thumb" id="shop-logo-prev"></div><label class="btn small" for="shop-logo">Upload logo</label><input type="file" id="shop-logo" class="vh" accept="image/*"></div>
-        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button class="btn primary" type="submit">Save shop</button><span class="note" id="shop-status"></span></div>
+        <div class="sec-h">Shops to visit</div>
+        <div id="shop-locs" style="display:flex;flex-direction:column;gap:10px"></div>
+        <div><button type="button" class="btn small" id="loc-add">Add a shop to visit</button></div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button class="btn primary" type="submit">Save</button><span class="note" id="shop-status"></span></div>
       </form>
       <div class="box-card">
         <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
@@ -283,6 +296,9 @@ h2 { margin: 0; font-family: var(--font-display); font-size: 19px; font-weight: 
     <div class="chipbox">
       <div class="seg" role="group" aria-label="View"><button type="button" id="v-3d" aria-pressed="true">3D</button><button type="button" id="v-plan" aria-pressed="false">Plan</button></div>
       <div class="seg" role="group" aria-label="Time of day"><button type="button" id="t-day" aria-pressed="true">Day</button><button type="button" id="t-eve" aria-pressed="false">Evening</button></div>
+    </div>
+    <div class="chipbox">
+      <div class="seg" role="group" aria-label="Tool" id="st-tools"><button type="button" data-tool="select" aria-pressed="true">Select</button><button type="button" data-tool="measure" aria-pressed="false">Measure</button><button type="button" data-tool="paint" aria-pressed="false">Paint</button></div>
     </div>
     <div class="spacer"></div>
     <div class="chipbox" id="st-actions"></div>

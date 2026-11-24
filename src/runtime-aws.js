@@ -134,7 +134,7 @@ function awsRuntime(cfg) {
         }
         if (r.kind === 'home') { await api('PUT', `/homes/${encodeURIComponent(r.id)}`, { home: data, summary: roomSummary(cleanHome(data), r.id) }); refresh('homes'); return; }
         if (r.kind === 'homeList') { refresh('homes'); return; }           // the server keeps the published list
-        if (r.kind === 'shop') { await api('PUT', '/shops/me', { doc: data }); refresh('shops'); return; }
+        if (r.kind === 'shop') { await api('PUT', r.id === me() ? '/shops/me' : `/shops/${encodeURIComponent(r.id)}`, { doc: data }); refresh('shops'); return; }
         throw { code: 'invalid_argument', message: 'not available' };
       },
       async update(data) { const cur = await this.get(); return this.set({ ...(cur.data() || {}), ...data }); },

@@ -25,7 +25,7 @@ const FRAME_STYLES = [['mould', 'Frames'], ['arch', 'Arches'], ['soft', 'Padded'
 
 /* ---------- Wall finishes ---------- */
 function defaultFinish(over) {
-  return { type: 'paint', color: '#f6f5f1', color2: '#d9a195', pattern: 'stars', tile: 30, board: 12, imgW: 60, img: null, paint: null, ...over };
+  return { type: 'paint', color: '#f6f5f1', color2: '#d9a195', pattern: 'stars', tile: 30, board: 12, imgW: 60, img: null, paint: null, base: null, ...over };
 }
 /* A shop's paint chosen for a wall: enough to work out litres and tins. */
 function cleanPaint(m) {
@@ -33,8 +33,8 @@ function cleanPaint(m) {
   return { ref: str(m.ref, 140), name: str(m.name, 80, 'Paint'), shop: str(m.shop, 60), url: safeUrl(m.url), price: num(m.price, 0, 100000, null),
     color: HEX.test(m.color || '') ? m.color : null, code: str(m.code, 40), tinL: num(m.tinL, 0.1, 30, 4), coverage: num(m.coverage, 2, 25, 10), coats: num(m.coats, 1, 4, 2) };
 }
-const defaultZone = (over) => ({ f: defaultFinish(), frames: false, style: 'mould', inner: null, mould: null, panelW: 0.7, panels: null, ...over });
-const defaultWall = () => ({ layout: 'whole', split: 1.0, rail: true, trim: null, railStyle: 'straight', railSize: 0.09, lo: defaultZone(), hi: defaultZone() });
+const defaultZone = (over) => ({ f: defaultFinish(), frames: false, style: 'mould', inner: null, mould: null, panelW: 0.7, panels: null, gap: null, panelH: null, moulding: null, ...over });
+const defaultWall = () => ({ layout: 'whole', split: 1.0, rail: true, trim: null, railStyle: 'straight', railSize: 0.09, railM: null, lo: defaultZone(), hi: defaultZone() });
 function cleanImg(m) {
   if (!m || typeof m !== 'object' || !BLOB.test(m.src || '')) return null;
   return { src: m.src, aspect: num(m.aspect, 0.05, 20, 1), width: num(m.width, 5, 400, 60), mural: !!m.mural, name: str(m.name, 120, 'Wallpaper'),
@@ -50,6 +50,7 @@ function cleanFinish(src, def) {
   f.tile = num(src.tile, 5, 300, f.tile); f.board = num(src.board, 3, 60, f.board); f.imgW = num(src.imgW, 5, 400, f.imgW);
   f.img = cleanImg(src.img);
   f.paint = f.type === 'paint' || f.type === 'panel' ? cleanPaint(src.paint) : null;
+  f.base = f.type === 'image' ? cleanPaint(src.base) : null;          // paint put on the wall before the paper
   if (f.type === 'image' && !f.img) f.type = 'paint';
   return f;
 }
@@ -58,44 +59,34 @@ function cleanZone(z, def) {
   z = z && typeof z === 'object' ? z : {};
   return { f: cleanFinish(z.f, def.f), frames: !!z.frames, style: FRAME_STYLES.some(([k]) => k === z.style) ? z.style : 'mould',
     inner: z.inner ? cleanFinish(z.inner, defaultFinish()) : null, mould: HEX.test(z.mould || '') ? z.mould : null,
-    panelW: num(z.panelW, 0.3, 2, 0.7), panels: cleanPanels(z.panels) };
+    panelW: num(z.panelW, 0.3, 2, 0.7), panels: cleanPanels(z.panels), gap: num(z.gap, 0, 1, null), panelH: num(z.panelH, 0.1, 4, null), moulding: cleanMoulding(z.moulding) };
 }
 function cleanWall(w) {
   const d = defaultWall(); w = w && typeof w === 'object' ? w : {};
   return { layout: w.layout === 'split' ? 'split' : 'whole', split: num(w.split, 0.2, 3, d.split), rail: w.rail !== false,
     trim: HEX.test(w.trim || '') ? w.trim : null, railStyle: RAIL_STYLES.some(([k]) => k === w.railStyle) ? w.railStyle : 'straight',
-    railSize: num(w.railSize, 0.04, 0.3, 0.09), lo: cleanZone(w.lo, d.lo), hi: cleanZone(w.hi, d.hi) };
+    railSize: num(w.railSize, 0.04, 0.3, 0.09), railM: cleanMoulding(w.railM), lo: cleanZone(w.lo, d.lo), hi: cleanZone(w.hi, d.hi) };
 }
 
 /* ---------- Products ---------- */
+/* What goes on the walls rather than in the room, sold by the roll, the tin or the strip. */
+const MATERIALS = { wallpaper: 'Wallpaper', paint: 'Paint', moulding: 'Moulding' };
+const MOULD_SHAPES = { flat: 'Flat strip', half: 'Half round', profiled: 'Profiled', corner: 'Corner' };
+const mouldSize = (m) => ({ face: num(m.face, 0.003, 0.3, 0.02), depth: num(m.depth, 0.002, 0.1, 0.01), len: num(m.len, 0.3, 6, 2.4), shape: MOULD_SHAPES[m.shape] ? m.shape : 'flat' });
+/* A shop's moulding chosen for panel frames or a rail: its size, strip length and price, enough to draw it and count strips. */
+function cleanMoulding(m) {
+  if (!m || typeof m !== 'object' || typeof m.ref !== 'string' || !m.ref) return null;
+  return { ref: str(m.ref, 140), name: str(m.name, 80, 'Moulding'), shop: str(m.shop, 60), url: safeUrl(m.url), price: num(m.price, 0, 100000, null), ...mouldSize(m) };
+}
 function cleanProduct(p) {
   p = p && typeof p === 'object' ? p : {};
-  const kind = KINDS[p.kind] || p.kind === 'wallpaper' || p.kind === 'paint' ? p.kind : 'box';
+  const kind = KINDS[p.kind] || MATERIALS[p.kind] ? p.kind : 'box';
   return { kind, name: str(p.name, 80, 'Item'), w: num(p.w, 0.05, 8, 0.6), d: num(p.d, 0.05, 8, 0.6), h: num(p.h, 0.004, 4, 0.6),
     color: HEX.test(p.color || '') ? p.color : '#d4dad5', photo: ASSET.test(p.photo || '') ? p.photo : null, model: ASSET.test(p.model || '') ? p.model : null,
     price: num(p.price, 0, 1000000, null), url: safeUrl(p.url), shop: str(p.shop, 60), shopId: str(p.shopId, 80), ref: str(p.ref, 140),
     editable: !!p.editable };
 }
-function cleanShopProduct(p) {
-  const base = cleanProduct(p);
-  base.id = /^[\w-]{1,40}$/.test(p && p.id || '') ? p.id : newId('p');
-  if (base.kind === 'wallpaper') {
-    const wp = (p && p.wallpaper) || {};
-    base.wallpaper = { tile: ASSET.test(wp.tile || '') ? wp.tile : null, width: num(wp.width, 5, 400, 50), aspect: num(wp.aspect, 0.05, 20, 1),
-      mural: !!wp.mural, rollW: num(wp.rollW, 10, 300, 53), rollL: num(wp.rollL, 50, 5000, 1005), unit: wp.unit === 'm2' ? 'm2' : 'roll' };
-  }
-  if (base.kind === 'paint') {
-    const pt = (p && p.paint) || {};
-    base.paint = { code: str(pt.code, 40), finish: str(pt.finish, 30), tinL: num(pt.tinL, 0.1, 30, 4), coverage: num(pt.coverage, 2, 25, 10), coats: num(pt.coats, 1, 4, 2) };
-  }
-  base.about = str(p && p.about, 300);
-  return base;
-}
-function cleanShop(s, id) {
-  s = s && typeof s === 'object' ? s : {};
-  return { id, name: str(s.name, 60, 'Shop'), url: safeUrl(s.url), about: str(s.about, 400), logo: ASSET.test(s.logo || '') ? s.logo : null, curated: !!s.curated,
-    products: Array.isArray(s.products) ? s.products.slice(0, 400).map(cleanShopProduct) : [], updatedAt: num(s.updatedAt, 0, 1e14, 0) };
-}
+/* Shops, their products and offers: catalog.js. */
 
 /* Starter furniture anyone can place: generic pieces, sizes editable. */
 const BASICS = [
@@ -129,7 +120,7 @@ function cleanRoom(src) {
   for (const it of Array.isArray(src.items) ? src.items.slice(0, 200) : []) {
     if (!it || typeof it !== 'object') continue;
     const p = cleanProduct(it.p);
-    if (p.kind === 'wallpaper' || p.kind === 'paint') continue;
+    if (MATERIALS[p.kind]) continue;
     r.items.push({ id: str(it.id, 40) || newId('i'), x: num(it.x, -10, 10, 0), z: num(it.z, -10, 10, 0), rot: [0, 1, 2, 3].includes(it.rot) ? it.rot : 0, p });
   }
   return r;
@@ -373,17 +364,6 @@ async function unpublish(id, owner = S.uid) {
 async function fetchPublished(owner, id) {
   const snap = await S.db.doc(`homes/${owner}/rooms/${id}`).get();
   return snap.exists ? cleanHome(snap.data()) : null;
-}
-const myShop = () => S.shops.get(S.uid) || null;
-async function saveShop(shop) {
-  const body = JSON.parse(JSON.stringify({ name: shop.name, url: shop.url, about: shop.about, logo: shop.logo, products: shop.products.map(({ editable, shop: _s, shopId, ref, curated, shopUrl, ...p }) => p), updatedAt: Date.now() }));
-  await S.db.doc('shops/' + S.uid).set(body);
-}
-/* Every product anyone can place, with its shop attached. */
-function allProducts() {
-  const out = BASICS.map(b => ({ ...b }));
-  for (const [sid, shop] of S.shops) for (const p of shop.products) out.push({ ...p, shop: shop.name, shopId: sid, ref: `shop:${sid}:${p.id}`, editable: false, shopUrl: shop.url, curated: shop.curated });
-  return out;
 }
 async function profilesFor(ids) {
   if (!S.user || !ids.length) return {};

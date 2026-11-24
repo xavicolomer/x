@@ -44,14 +44,26 @@ test('drafts are private to each person', async () => {
   assert.equal((await call(h, 'GET /api/me/drafts', { user: as('ana') })).body.drafts.length, 0);
 });
 
-test('shops: the built-in IKEA catalogue plus each person\'s own shop', async () => {
+test('shops: the built-in catalogues (IKEA, Servei Estació) plus each person\'s own shop', async () => {
   const h = setup();
   let shops = (await call(h, 'GET /api/shops')).body.shops;
-  assert.deepEqual(shops.map(s => s.id), ['ikea-es']);
+  assert.deepEqual(shops.map(s => s.id), ['ikea-es', 'servei-estacio']);
   assert.ok(JSON.parse(shops[0].doc).products.length > 50);
+  assert.ok(JSON.parse(shops[1].doc).products.every(p => p.kind === 'moulding' && p.moulding.len === 2.4));
   await call(h, 'PUT /api/shops/me', { body: { doc: { name: 'Casa Lino', products: [] } }, user: as('ana') });
   shops = (await call(h, 'GET /api/shops')).body.shops;
-  assert.deepEqual(shops.map(s => s.id), ['ikea-es', 'ana']);
+  assert.deepEqual(shops.map(s => s.id), ['ikea-es', 'servei-estacio', 'ana']);
+});
+
+test('shops: only admins write a vendor other than their own, and theirs replaces a built-in one', async () => {
+  const h = setup();
+  const put = (id, user) => call(h, 'PUT /api/shops/{id}', { params: { id }, body: { doc: { name: 'Servei Estació', products: [], offers: [] } }, user });
+  assert.equal((await put('servei-estacio', as('ana'))).status, 403);
+  assert.equal((await put('ana', as('ana'))).status, 200);                 // your own id is fine
+  assert.equal((await put('servei-estacio', as('nido-admin', 'Admin', '[admins]'))).status, 200);
+  const shops = (await call(h, 'GET /api/shops')).body.shops;
+  assert.deepEqual(shops.map(s => s.id).sort(), ['ana', 'ikea-es', 'servei-estacio']);
+  assert.deepEqual(JSON.parse(shops.find(s => s.id === 'servei-estacio').doc).offers, []);
 });
 
 test('limits: bad ids, oversized homes, unsupported or oversized uploads', async () => {

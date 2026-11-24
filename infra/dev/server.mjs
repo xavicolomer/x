@@ -11,7 +11,7 @@ import { FakeDb } from './fake-db.mjs';
 const here = dirname(fileURLToPath(import.meta.url));
 const WEB = join(here, '..', '..', 'dist', 'web');
 const ROUTES = ['GET /api/homes', 'GET /api/homes/{owner}/{id}', 'GET /api/shops', 'PUT /api/homes/{id}', 'DELETE /api/homes/{owner}/{id}',
-  'GET /api/me/drafts', 'PUT /api/me/drafts/{id}', 'DELETE /api/me/drafts/{id}', 'PUT /api/shops/me', 'POST /api/uploads'];
+  'GET /api/me/drafts', 'PUT /api/me/drafts/{id}', 'DELETE /api/me/drafts/{id}', 'PUT /api/shops/me', 'PUT /api/shops/{id}', 'POST /api/uploads'];
 
 export function devApp({ dataFile = join(here, '.data.json'), blobDir = dataFile ? join(here, '.blobs') : null } = {}) {
   // Uploaded pictures and models: kept in dev/.blobs/ next to the saved homes, so a restart doesn't lose them.

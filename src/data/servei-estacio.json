@@ -1,0 +1,164 @@
+{
+ "name": "Servei Estació",
+ "url": null,
+ "curated": true,
+ "about": "Hardware and DIY store in Barcelona. Wood mouldings and strips, sold by the 2.4 m length.",
+ "logo": null,
+ "updatedAt": 1795478400000,
+ "products": [
+  {
+   "id": "se-liston-5x33-haya",
+   "kind": "moulding",
+   "name": "Listón plano 5 × 33 mm, haya",
+   "price": 6.8,
+   "color": "#d9b48a",
+   "moulding": {
+    "face": 0.033,
+    "depth": 0.005,
+    "len": 2.4,
+    "shape": "flat"
+   },
+   "about": "Shelf label: Liston Plano Perfil 5x33 Haya. Length not on the label; 2.4 m assumed. Price on the shelf label in the shop, November 2026."
+  },
+  {
+   "id": "se-liston-5x20",
+   "kind": "moulding",
+   "name": "Listón plano 5 × 20 mm",
+   "price": 4.9,
+   "color": "#e2c9a0",
+   "moulding": {
+    "face": 0.02,
+    "depth": 0.005,
+    "len": 2.4,
+    "shape": "flat"
+   },
+   "about": "Shelf label: liston Perfil Plano 5x20 Ma 4,3x1,8. Length not on the label; 2.4 m assumed. Price on the shelf label in the shop, November 2026."
+  },
+  {
+   "id": "se-media-varilla-12",
+   "kind": "moulding",
+   "name": "Media varilla 12 mm",
+   "price": 2.9,
+   "color": "#e2c9a0",
+   "moulding": {
+    "face": 0.012,
+    "depth": 0.006,
+    "len": 2.4,
+    "shape": "half"
+   },
+   "about": "Shelf label: Media Varilla Hr 12 Ma 240 1,2 0,6. Price on the shelf label in the shop, November 2026."
+  },
+  {
+   "id": "se-media-varilla-18",
+   "kind": "moulding",
+   "name": "Media varilla 18 mm",
+   "price": 4.5,
+   "color": "#e2c9a0",
+   "moulding": {
+    "face": 0.018,
+    "depth": 0.009,
+    "len": 2.4,
+    "shape": "half"
+   },
+   "about": "Shelf label: Media Varilla Hr 18 Ma 240 1,8 0,9. Price on the shelf label in the shop, November 2026."
+  },
+  {
+   "id": "se-moldura-hs1027",
+   "kind": "moulding",
+   "name": "Moldura HS 1027, pino rojo",
+   "price": 6.5,
+   "color": "#c98f5e",
+   "moulding": {
+    "face": 0.025,
+    "depth": 0.008,
+    "len": 2.4,
+    "shape": "profiled"
+   },
+   "about": "Shelf label: Moldura Hs 1027 Pino Rojo 240x08x2,5. Price on the shelf label in the shop, November 2026."
+  },
+  {
+   "id": "se-cantonera-h1335",
+   "kind": "moulding",
+   "name": "Cantonera H-1335, pino rojo",
+   "price": 10.95,
+   "color": "#c98f5e",
+   "moulding": {
+    "face": 0.033,
+    "depth": 0.013,
+    "len": 2.4,
+    "shape": "corner"
+   },
+   "about": "Shelf label: Cantonera H-1335 Pino Rojo 240x1,3x3,3. Price on the shelf label in the shop, November 2026."
+  },
+  {
+   "id": "se-moldura-16-landes",
+   "kind": "moulding",
+   "name": "Moldura nº 16, pino de las Landas",
+   "price": 5.9,
+   "color": "#e0c08f",
+   "moulding": {
+    "face": 0.019,
+    "depth": 0.009,
+    "len": 2.4,
+    "shape": "profiled"
+   },
+   "about": "Shelf label: Moldura Nº16 Landes 9x19x2400mm. Price on the shelf label in the shop, November 2026."
+  },
+  {
+   "id": "se-moldura-17-landes",
+   "kind": "moulding",
+   "name": "Moldura nº 17, pino de las Landas",
+   "price": 7.1,
+   "color": "#e0c08f",
+   "moulding": {
+    "face": 0.023,
+    "depth": 0.01,
+    "len": 2.4,
+    "shape": "profiled"
+   },
+   "about": "Shelf label: Moldura Nº17 Landes 10x23x2400mm. Price on the shelf label in the shop, November 2026."
+  },
+  {
+   "id": "se-tapajuntas-di522",
+   "kind": "moulding",
+   "name": "Tapajuntas DI 522",
+   "price": 5.4,
+   "color": "#e2c9a0",
+   "moulding": {
+    "face": 0.022,
+    "depth": 0.004,
+    "len": 2.4,
+    "shape": "flat"
+   },
+   "about": "Shelf label: Tapajuntas DI 522 Ca 240 0,4 2,2 Ref. 10131. Price on the shelf label in the shop, November 2026."
+  },
+  {
+   "id": "se-tapajuntas-di518",
+   "kind": "moulding",
+   "name": "Tapajuntas DI 518",
+   "price": 5.4,
+   "color": "#e2c9a0",
+   "moulding": {
+    "face": 0.018,
+    "depth": 0.004,
+    "len": 2.4,
+    "shape": "flat"
+   },
+   "about": "Shelf label: Tapajuntas DI 518 Ca 240 0,4 1,8 Ref. 10129. Price on the shelf label in the shop, November 2026."
+  },
+  {
+   "id": "se-tapajuntas-ch825",
+   "kind": "moulding",
+   "name": "Tapajuntas CH 825, malupa",
+   "price": 9.85,
+   "color": "#b98a62",
+   "moulding": {
+    "face": 0.035,
+    "depth": 0.007,
+    "len": 2.4,
+    "shape": "flat"
+   },
+   "about": "Shelf label: Tapajuntas Ch 825 Malupa 240x0,7x3,5. Price on the shelf label in the shop, November 2026."
+  }
+ ]
+}
