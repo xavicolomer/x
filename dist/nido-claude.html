@@ -2336,7 +2336,7 @@ function renderMyRooms() {
     <div class="body"><div class="t"></div>
       <div class="meta"><span class="num">${r.rooms.length > 1 ? `${r.rooms.length} rooms · ${Math.round(homeArea(r))} m²` : `${sizeText(r.rooms[0])} · ${cm(r.rooms[0].h)} high`}</span>${r.published ? '<span class="pill live">In Explore</span>' : '<span class="pill">Draft</span>'}</div>
       <div class="meta"><span>${r.rooms.reduce((t, x) => t + x.items.length, 0)} pieces</span><span>Saved ${ago(r.updatedAt)}</span></div>
-      <div class="row"><button type="button" class="btn small primary" data-edit="${esc(id)}">Open</button><button type="button" class="btn small danger" data-del="${esc(id)}">${armedDelete === id ? 'Click again to delete' : 'Delete'}</button></div>
+      <div class="row"><button type="button" class="btn small primary" data-edit="${esc(id)}">Open</button><button type="button" class="btn small" data-dup="${esc(id)}">Duplicate</button><button type="button" class="btn small danger" data-del="${esc(id)}">${armedDelete === id ? 'Click again to delete' : 'Delete'}</button></div>
     </div></article>`).join('');
   [...g.querySelectorAll('.card')].forEach((c, i) => { c.querySelector('.t').textContent = list[i][1].name; });
 }
@@ -2603,6 +2603,13 @@ document.addEventListener('click', async (e) => {
   if (t.id === 'sign-out') { S.cloud.signOut(); return; }
   if (t.dataset.edit) { openEditor(t.dataset.edit); return; }
   if (t.dataset.openPub) { const [o, id] = t.dataset.openPub.split('|'); openViewer(o, id); return; }
+  if (t.dataset.dup) {                   // a private copy of one of your homes; pictures are shared, they never change
+    const src = S.drafts.get(t.dataset.dup); if (!src) return;
+    const copy = cleanHome(JSON.parse(JSON.stringify(src)));
+    copy.name = copyName(src.name, [...S.drafts.values()].map(h => h.name)); copy.published = false; copy.cover = null;
+    if (copy.rooms.length === 1) copy.rooms[0].name = copy.name;
+    await saveDraft(newId('r'), copy); renderMyRooms(); toast(`Made ${copy.name}. The original is unchanged.`); return;
+  }
   if (t.dataset.del) {
     if (armedDelete !== t.dataset.del) { armedDelete = t.dataset.del; renderMyRooms(); setTimeout(() => { if (armedDelete === t.dataset.del) { armedDelete = null; renderMyRooms(); } }, 4000); return; }
     armedDelete = null; await deleteDraft(t.dataset.del); toast('Room deleted.'); renderMyRooms(); return;
@@ -2783,6 +2790,19 @@ function flatPane() {
     <button type="button" class="btn primary" data-act="addroom">Add a room</button>
     <p class="note">Tap a room, here or in the 3D view, to work on it on its own. In Plan view, drag rooms to arrange them: they snap together with a 10 cm wall between, and doors cut through both sides.</p>`;
 }
+/* Where a duplicated room goes in the home's plan. placeBeside(o, r, side) sets r.x and r.z so r sits against
+   that side of o with a 10 cm wall between; homeBox(home) and each room's x, z, w, l (centre and size) describe the plan.
+   TODO: this always puts the copy on the original's right, so in a flat it can land on top of another room.
+   Pick a free spot instead: for example, try the sides in turn and keep the first one where the copy overlaps no room,
+   or fall back to the far edge of the whole home. */
+function placeCopy(home, src, copy) {
+  placeBeside(src, copy, 'right');
+}
+/* "Kids' room" → "Kids' room (copy)", then "(copy 2)", "(copy 3)"…, skipping names in use; never "(copy) (copy)". */
+function copyName(name, taken) {
+  const base = name.replace(/ \(copy(?: \d+)?\)$/, '').slice(0, 49);
+  for (let n = 1; ; n++) { const c = `${base} (copy${n > 1 ? ' ' + n : ''})`; if (!taken.includes(c)) return c; }
+}
 function addRoomDialog() {
   const h = studio.home, last = h.rooms[h.rooms.length - 1];
   const box = openDialog(`<form id="ar" style="display:flex;flex-direction:column;gap:12px">
@@ -2832,7 +2852,7 @@ function roomPane() {
     ${ops || '<p class="note">None yet.</p>'}
     <div style="display:flex;gap:6px;flex-wrap:wrap">${Object.entries(OP_KINDS).map(([k, n]) => `<button type="button" class="btn small" data-act="opadd" data-v="${k}">Add ${n.toLowerCase()}</button>`).join('')}</div>
     <div class="sec-h">This home</div>
-    <div style="display:flex;gap:6px;flex-wrap:wrap"><button type="button" class="btn small" data-act="addroom">Add another room</button>${studio.home.rooms.length > 1 ? `<button type="button" class="btn small danger" data-act="rdel">${armedRoom === r.id ? 'Click again to remove this room' : 'Remove this room'}</button>` : ''}</div>`;
+    <div style="display:flex;gap:6px;flex-wrap:wrap"><button type="button" class="btn small" data-act="addroom">Add another room</button><button type="button" class="btn small" data-act="rdup">Duplicate this room</button>${studio.home.rooms.length > 1 ? `<button type="button" class="btn small danger" data-act="rdel">${armedRoom === r.id ? 'Click again to remove this room' : 'Remove this room'}</button>` : ''}</div>`;
 }
 function furniturePane() {
   const r = studio.room;
@@ -3077,6 +3097,17 @@ async function paneEvent(e) {
   }
   if (act === 'focus') { focusRoom(t.dataset.id); return; }
   if (act === 'addroom') { addRoomDialog(); return; }
+  if (act === 'rdup') {                  // same size, walls, windows and furniture; new ids so nothing is shared with the original
+    if (studio.home.rooms.length >= 24) { toast('A home can have at most 24 rooms.'); return; }
+    const copy = JSON.parse(JSON.stringify(r));
+    copy.id = newId('room'); copy.name = copyName(r.name, studio.home.rooms.map(x => x.name));
+    for (const o of copy.openings) o.id = newId('o');
+    for (const it of copy.items) it.id = newId('i');
+    placeCopy(studio.home, r, copy);
+    studio.home.rooms.push(copy);
+    changed(true); resetView(); focusRoom(copy.id);
+    toast(`${copy.name} added. Drag it in Plan view to move it.`); return;
+  }
   if (act === 'rname' && type === 'change') { r.name = t.value.trim().slice(0, 60) || 'Room'; if (studio.home.rooms.length === 1) studio.home.name = r.name; changed(false); renderStudio(); return; }
   if (act === 'rdel') {
     if (armedRoom !== r.id) { armedRoom = r.id; rerender(); setTimeout(() => { if (armedRoom === r.id) { armedRoom = null; if (studio && studio.tab === 'room') renderPane(); } }, 4000); return; }

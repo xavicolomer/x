@@ -2,6 +2,7 @@
    Sign-in is simulated: the app shows a name prompt instead of Cognito. Usage: npm run dev, then open http://localhost:8080 */
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
+import { mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { makeHandler } from '../lambda/api.mjs';
@@ -12,8 +13,19 @@ const WEB = join(here, '..', '..', 'dist', 'web');
 const ROUTES = ['GET /api/homes', 'GET /api/homes/{owner}/{id}', 'GET /api/shops', 'PUT /api/homes/{id}', 'DELETE /api/homes/{owner}/{id}',
   'GET /api/me/drafts', 'PUT /api/me/drafts/{id}', 'DELETE /api/me/drafts/{id}', 'PUT /api/shops/me', 'POST /api/uploads'];
 
-export function devApp({ dataFile = join(here, '.data.json') } = {}) {
-  const blobs = new Map();
+export function devApp({ dataFile = join(here, '.data.json'), blobDir = dataFile ? join(here, '.blobs') : null } = {}) {
+  // Uploaded pictures and models: kept in dev/.blobs/ next to the saved homes, so a restart doesn't lose them.
+  // With no data file (the browser tests), everything stays in memory.
+  const mem = new Map();
+  if (blobDir) mkdirSync(blobDir, { recursive: true });
+  const blobs = {
+    set: (id, b) => { mem.set(id, b); if (blobDir) { writeFileSync(join(blobDir, id), b.data); writeFileSync(join(blobDir, id + '.type'), b.type || 'application/octet-stream'); } },
+    get: (id) => {
+      if (mem.has(id) || !blobDir || !/^[0-9a-f]{32}$/.test(id) || !existsSync(join(blobDir, id))) return mem.get(id);
+      const b = { data: readFileSync(join(blobDir, id)), type: readFileSync(join(blobDir, id + '.type'), 'utf8') };
+      mem.set(id, b); return b;
+    },
+  };
   const api = makeHandler({ db: new FakeDb(dataFile), table: 'dev', presign: async ({ key, type }) => ({ url: '/dev-upload', fields: { key, 'Content-Type': type } }) });
   const match = (method, path) => {
     for (const r of ROUTES) {
@@ -55,8 +67,9 @@ export function devApp({ dataFile = join(here, '.data.json') } = {}) {
     }
     if (path === '/dev-upload' && req.method === 'POST') {
       const f = multipart(await body(req), req.headers['content-type']);
-      if (!f.key || !f.file) return send(400, '{}');
-      blobs.set(f.key.replace(/^_blob\//, ''), { data: f.file, type: f['Content-Type'] });
+      const id = /^_blob\/([0-9a-f]{32})$/.exec(f.key || '');      // only ids the API hands out: no paths from the browser
+      if (!id || !f.file) return send(400, '{}');
+      blobs.set(id[1], { data: f.file, type: f['Content-Type'] });
       return send(204, '');
     }
     if (path.startsWith('/_blob/')) { const b = blobs.get(path.slice(7)); return b ? send(200, b.data, b.type) : send(404, ''); }
