@@ -1,29 +1,23 @@
 <title>Nido Rooms</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%232c6b58' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2M7 11.5 12 7.5l5 4V17H7z'/%3E%3C/svg%3E">
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400..800&family=Geist+Mono:wght@400..600&display=swap">
 <style>
 /* Layout: an app shell (header + one view at a time); rooms open in a full-screen studio with the 3D stage and a side panel */
+[hidden] { display: none !important; }     /* hidden means hidden, whatever display a class gives it */
+/* Design tokens (DESIGN.md): clean, white, minimal. Buttons are pills, panels have 10px corners; one edge or one shadow, never both. */
 :root {
-  --bg: #eef0ec; --scene: #e4e8e3; --surface: #fbfcfa; --surface-2: #f0f3ef; --fg: #1b211e; --muted: #5d6862; --line: #d4dad5;
-  --accent: #2c6b58; --accent-ink: #ffffff; --accent-soft: #e0eee8; --clay: #a5543f; --clay-soft: #f6e4dd;
-  --bad: #ad3a17; --bad-bg: #fbe4db; --shadow: 0 1px 2px rgba(20,30,25,.06), 0 8px 28px rgba(20,30,25,.10);
-  --font-display: "Bricolage Grotesque", "Manrope", system-ui, sans-serif;
-  --font-ui: "Manrope", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  --font-num: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-}
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --bg: #121614; --scene: #161b18; --surface: #1b211e; --surface-2: #232a26; --fg: #e5ebe7; --muted: #9aa69f; --line: #303934;
-    --accent: #72c4a7; --accent-ink: #0d1a14; --accent-soft: #1d3329; --clay: #e79b84; --clay-soft: #36221c;
-    --bad: #f0896a; --bad-bg: #351f18; --shadow: 0 1px 2px rgba(0,0,0,.3), 0 10px 30px rgba(0,0,0,.35); color-scheme: dark;
-  }
-}
-:root[data-theme="dark"] {
-  --bg: #121614; --scene: #161b18; --surface: #1b211e; --surface-2: #232a26; --fg: #e5ebe7; --muted: #9aa69f; --line: #303934;
-  --accent: #72c4a7; --accent-ink: #0d1a14; --accent-soft: #1d3329; --clay: #e79b84; --clay-soft: #36221c;
-  --bad: #f0896a; --bad-bg: #351f18; --shadow: 0 1px 2px rgba(0,0,0,.3), 0 10px 30px rgba(0,0,0,.35); color-scheme: dark;
+  --bg: #ffffff; --scene: #f2f2f0; --surface: #ffffff; --surface-2: #f4f4f2; --fg: #141414; --muted: #6a6a66; --line: #e7e7e4;
+  --accent: #2c6b58; --accent-ink: #ffffff; --accent-soft: #e8f2ee; --clay: #a5543f; --clay-soft: #f8ece7;
+  --bad: #b2391b; --bad-bg: #fcebe5;
+  --r-btn: 999px; --r-panel: 10px; --r-media: 6px;
+  --elev: 0 6px 24px rgba(17, 17, 17, .08); --shadow: var(--elev);
+  --font-display: "Geist", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-ui: "Geist", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-num: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color-scheme: light;
 }
 *, *::before, *::after { box-sizing: border-box; }
 html, body { height: 100%; }
@@ -43,11 +37,20 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
 .logo svg { flex: none; }
 .logo b { font-family: var(--font-display); font-weight: 800; font-size: 22px; letter-spacing: -.02em; }
 .nav { display: flex; gap: 2px; flex-wrap: wrap; }
-.nav a { padding: 7px 12px; border-radius: 8px; text-decoration: none; color: var(--muted); font-weight: 700; }
+.nav a { padding: 7px 14px; border-radius: var(--r-btn); text-decoration: none; color: var(--muted); font-weight: 700; }
 .nav a:hover { color: var(--fg); background: var(--surface-2); }
 .nav a[aria-current="page"] { color: var(--accent); background: var(--accent-soft); }
 .who { margin-left: auto; display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12.5px; min-width: 0; }
 .who img { width: 26px; height: 26px; border-radius: 50%; }
+.who { position: relative; }
+.who-btn { display: inline-flex; align-items: center; gap: 8px; border: 0; background: transparent; color: var(--fg); font-weight: 600; font-size: 13px; padding: 3px 10px 3px 3px; border-radius: var(--r-btn); cursor: pointer; }
+.who-btn:hover, .who-btn[aria-expanded="true"] { background: var(--surface-2); }
+.who-btn svg { color: var(--muted); }
+.menu { position: absolute; right: 0; top: calc(100% + 6px); z-index: 50; min-width: 200px; background: var(--surface); border-radius: var(--r-panel); box-shadow: var(--elev); padding: 6px; display: flex; flex-direction: column; gap: 2px; }
+.menu-h { display: flex; flex-direction: column; padding: 8px 10px 10px; border-bottom: 1px solid var(--line); margin-bottom: 4px; color: var(--fg); }
+.menu-h small { color: var(--muted); font-size: 12px; }
+.menu [role="menuitem"] { border: 0; background: transparent; text-align: left; padding: 8px 10px; border-radius: var(--r-btn); font-weight: 600; cursor: pointer; color: var(--fg); }
+.menu [role="menuitem"]:hover, .menu [role="menuitem"]:focus-visible { background: var(--surface-2); outline: none; }
 
 /* ---------- Views ---------- */
 main { max-width: 1240px; margin: 0 auto; padding-block: 26px 60px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
@@ -56,50 +59,52 @@ main { max-width: 1240px; margin: 0 auto; padding-block: 26px 60px; padding-left
 .head h1 { margin: 0; font-family: var(--font-display); font-weight: 800; font-size: clamp(26px, 4vw, 38px); letter-spacing: -.025em; line-height: 1.05; text-wrap: balance; }
 .head p { margin: 6px 0 0; color: var(--muted); max-width: 62ch; }
 h2 { margin: 0; font-family: var(--font-display); font-size: 19px; font-weight: 800; letter-spacing: -.015em; }
-.btn { display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 8px 14px; border-radius: 9px; border: 1px solid var(--line);
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 8px 16px; border-radius: var(--r-btn); border: 1px solid var(--line);
   background: var(--surface); font-weight: 700; cursor: pointer; text-decoration: none; color: var(--fg); white-space: nowrap; }
 .btn:hover { background: var(--surface-2); }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
 .btn.primary:hover { filter: brightness(1.06); }
 .btn.danger { color: var(--bad); }
-.btn.small { padding: 5px 10px; font-size: 12.5px; border-radius: 7px; }
+.btn.small { padding: 5px 12px; font-size: 12.5px; }
 .btn:disabled { opacity: .5; cursor: not-allowed; }
 .note { color: var(--muted); font-size: 12.5px; margin: 0; }
-.banner { background: var(--clay-soft); color: var(--fg); border-radius: 10px; padding: 10px 14px; font-size: 13px; }
-.empty { border: 1.5px dashed var(--line); border-radius: 14px; padding: 34px 20px; text-align: center; color: var(--muted); display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.banner { background: var(--clay-soft); color: var(--fg); border-radius: var(--r-panel); padding: 10px 14px; font-size: 13px; }
+.empty { border: 1.5px dashed var(--line); border-radius: var(--r-panel); padding: 34px 20px; text-align: center; color: var(--muted); display: flex; flex-direction: column; align-items: center; gap: 10px; }
 .empty b { color: var(--fg); font-size: 15px; }
 
 /* room and product cards */
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 16px; }
-.card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; display: flex; flex-direction: column; min-width: 0; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-panel); overflow: hidden; display: flex; flex-direction: column; min-width: 0; }
 .card .pic { aspect-ratio: 16 / 10; background: var(--surface-2); position: relative; overflow: hidden; border: 0; padding: 0; cursor: pointer; display: block; width: 100%; }
 .card .pic img { position: absolute; inset: 0; z-index: 1; width: 100%; height: 100%; object-fit: cover; display: block; }
 .card .pic .plan { position: absolute; inset: 0; display: grid; place-items: center; }
+.card .pic img.pv { z-index: 2; object-fit: contain; }
+.card .pic .pv-tag { position: absolute; left: 10px; bottom: 10px; z-index: 3; }
 .card .body { padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 6px; flex: 1; }
 .card .t { font-weight: 800; font-size: 15px; overflow-wrap: anywhere; }
 .card .meta { color: var(--muted); font-size: 12.5px; display: flex; gap: 6px 12px; flex-wrap: wrap; align-items: center; }
 .card .row { display: flex; gap: 8px; margin-top: auto; padding-top: 6px; flex-wrap: wrap; }
 .owner { display: inline-flex; align-items: center; gap: 6px; }
 .owner img { width: 18px; height: 18px; border-radius: 50%; }
-.pill { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 99px; font-size: 11.5px; font-weight: 700; background: var(--surface-2); color: var(--muted); }
+.pill { display: inline-flex; align-items: center; gap: 4px; padding: 2px 9px; border-radius: var(--r-btn); font-size: 11.5px; font-weight: 700; background: var(--surface-2); color: var(--muted); }
 .pill.live { background: var(--accent-soft); color: var(--accent); }
 .price { font-family: var(--font-num); font-weight: 600; color: var(--clay); }
 .templates { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; }
-.tpl { text-align: left; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px; cursor: pointer; display: flex; flex-direction: column; gap: 4px; }
+.tpl { text-align: left; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-panel); padding: 12px; cursor: pointer; display: flex; flex-direction: column; gap: 4px; }
 .tpl:hover, .tpl[aria-pressed="true"] { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 .tpl b { font-size: 14px; }
 .tpl span { color: var(--muted); font-size: 12px; }
 
 /* filters */
 .chips { display: flex; gap: 6px; flex-wrap: wrap; }
-.chip { border: 1px solid var(--line); background: var(--surface); border-radius: 99px; padding: 5px 11px; cursor: pointer; font-weight: 600; font-size: 12.5px; }
+.chip { border: 1px solid var(--line); background: var(--surface); border-radius: var(--r-btn); padding: 5px 12px; cursor: pointer; font-weight: 600; font-size: 12.5px; }
 .chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
 .search { flex: 1; min-width: 200px; max-width: 360px; }
 
 /* forms */
 .field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .field > span { font-size: 12px; color: var(--muted); font-weight: 600; }
-.in { display: flex; align-items: center; background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px; min-width: 0; }
+.in { display: flex; align-items: center; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-panel); min-width: 0; }
 .in:focus-within { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 .in input, .in select, .in textarea { flex: 1; min-width: 0; border: 0; background: transparent; padding: 7px 9px; outline: none; }
 .in .u { padding-right: 9px; color: var(--muted); font-size: 12px; font-family: var(--font-num); }
@@ -108,20 +113,20 @@ h2 { margin: 0; font-family: var(--font-display); font-size: 19px; font-weight: 
 .fields.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .check { display: flex; align-items: center; gap: 8px; cursor: pointer; font-weight: 600; }
-.box-card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 18px; display: flex; flex-direction: column; gap: 14px; }
+.box-card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-panel); padding: 18px; display: flex; flex-direction: column; gap: 14px; }
 .split2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 18px; align-items: start; }
 @media (max-width: 860px) { .split2 { grid-template-columns: 1fr; } }
 .ptable { width: 100%; border-collapse: collapse; font-size: 13px; }
 .ptable th { text-align: left; color: var(--muted); font-size: 11.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; padding: 6px 8px; border-bottom: 1px solid var(--line); }
 .ptable td { padding: 8px; border-bottom: 1px solid var(--line); vertical-align: middle; }
-.thumb { width: 44px; height: 44px; border-radius: 8px; background: var(--surface-2) center / cover no-repeat; border: 1px solid var(--line); flex: none; }
+.thumb { width: 44px; height: 44px; border-radius: var(--r-media); background: var(--surface-2) center / cover no-repeat; border: 1px solid var(--line); flex: none; }
 .uploader { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .uploader .thumb { width: 64px; height: 64px; }
 .vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
 /* dialog */
-.dlg-back { position: fixed; inset: 0; background: rgba(10,15,12,.45); z-index: 60; display: grid; place-items: center; padding: 16px; }
-.dlg { background: var(--surface); border-radius: 16px; box-shadow: var(--shadow); width: min(640px, 100%); max-height: calc(100% - 32px); overflow: auto; padding: 20px; display: flex; flex-direction: column; gap: 14px; }
+.dlg-back { position: fixed; inset: 0; background: rgba(20, 20, 20, .28); z-index: 60; display: grid; place-items: center; padding: 16px; }
+.dlg { background: var(--surface); border-radius: var(--r-panel); box-shadow: var(--elev); width: min(640px, 100%); max-height: calc(100% - 32px); overflow: auto; padding: 20px; display: flex; flex-direction: column; gap: 14px; }
 .dlg-h { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
 
 /* ---------- Studio (3D) ---------- */
@@ -131,63 +136,63 @@ h2 { margin: 0; font-family: var(--font-display); font-size: 19px; font-weight: 
 .sbar { position: absolute; top: calc(10px + env(safe-area-inset-top, 0px)); left: max(12px, env(safe-area-inset-left, 0px)); right: max(12px, env(safe-area-inset-right, 0px));
   display: flex; gap: 8px; align-items: center; z-index: 5; pointer-events: none; flex-wrap: wrap; }
 .sbar > * { pointer-events: auto; }
-.chipbox { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; box-shadow: var(--shadow); display: flex; align-items: center; gap: 4px; padding: 4px; }
-.seg { display: inline-flex; background: var(--surface-2); border-radius: 8px; padding: 2px; gap: 2px; }
-.seg button { border: 0; background: transparent; padding: 5px 10px; border-radius: 6px; font-weight: 700; cursor: pointer; color: var(--muted); font-size: 12.5px; }
+.chipbox { background: var(--surface); border-radius: var(--r-panel); box-shadow: var(--elev); display: flex; align-items: center; gap: 4px; padding: 4px; }
+.seg { display: inline-flex; background: var(--surface-2); border-radius: var(--r-btn); padding: 2px; gap: 2px; }
+.seg button { border: 0; background: transparent; padding: 5px 12px; border-radius: var(--r-btn); font-weight: 700; cursor: pointer; color: var(--muted); font-size: 12.5px; }
 .seg button[aria-pressed="true"] { background: var(--surface); color: var(--fg); box-shadow: 0 1px 2px rgba(0,0,0,.12); }
 .seg.wide { display: flex; } .seg.wide button { flex: 1; }
-.rname { border: 0; background: transparent; font-weight: 800; font-size: 15px; padding: 4px 6px; min-width: 0; width: 220px; border-radius: 6px; }
+.rname { border: 0; background: transparent; font-weight: 800; font-size: 15px; padding: 4px 8px; min-width: 0; width: 220px; border-radius: var(--r-btn); }
 .rname:focus { background: var(--surface-2); outline: none; }
 .sbar .spacer { flex: 1; }
 .save-state { font-size: 12px; color: var(--muted); padding: 0 6px; }
 .side { position: absolute; z-index: 4; top: calc(var(--bar, 46px) + 20px + env(safe-area-inset-top, 0px)); left: max(12px, env(safe-area-inset-left, 0px)); bottom: calc(12px + env(safe-area-inset-bottom, 0px)); width: 340px;
-  background: var(--surface); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); display: flex; flex-direction: column; overflow: hidden; }
+  background: var(--surface); border-radius: var(--r-panel); box-shadow: var(--elev); display: flex; flex-direction: column; overflow: hidden; }
 .side .tabs { display: flex; gap: 2px; padding: 6px; border-bottom: 1px solid var(--line); }
-.side .tabs button { flex: 1; border: 0; background: transparent; padding: 7px 4px; border-radius: 7px; font-weight: 700; color: var(--muted); cursor: pointer; font-size: 12.5px; }
+.side .tabs button { flex: 1; border: 0; background: transparent; padding: 7px 4px; border-radius: var(--r-btn); font-weight: 700; color: var(--muted); cursor: pointer; font-size: 12.5px; }
 .side .tabs button[aria-selected="true"] { background: var(--accent-soft); color: var(--accent); }
 .side .pane { overflow: auto; padding: 14px; display: flex; flex-direction: column; gap: 14px; flex: 1; }
 .sec-h { font-size: 11.5px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
 .list { display: flex; flex-direction: column; gap: 6px; }
-.lrow { display: flex; align-items: center; gap: 10px; padding: 7px 8px; border-radius: 9px; border: 1px solid var(--line); background: var(--surface); cursor: pointer; text-align: left; width: 100%; }
+.lrow { display: flex; align-items: center; gap: 10px; padding: 7px 8px; border-radius: var(--r-panel); border: 1px solid var(--line); background: var(--surface); cursor: pointer; text-align: left; width: 100%; }
 .lrow:hover { background: var(--surface-2); }
 .lrow[aria-pressed="true"] { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
-.lrow .thumb { width: 34px; height: 34px; border-radius: 7px; }
+.lrow .thumb { width: 34px; height: 34px; border-radius: var(--r-media); }
 .lrow .tx { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .lrow .tx b { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lrow .tx small { color: var(--muted); font-size: 11.5px; }
-.op-card { border: 1px solid var(--line); border-radius: 10px; padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+.op-card { border: 1px solid var(--line); border-radius: var(--r-panel); padding: 10px; display: flex; flex-direction: column; gap: 8px; }
 .op-card .op-h { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-weight: 800; }
-.finish { display: flex; flex-direction: column; gap: 9px; padding: 10px; border: 1px solid var(--line); border-radius: 10px; }
+.finish { display: flex; flex-direction: column; gap: 9px; padding: 10px; border: 1px solid var(--line); border-radius: var(--r-panel); }
 .fin-h { font-size: 12.5px; font-weight: 800; }
 .types { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; }
-.types button { border: 1px solid var(--line); background: var(--surface-2); border-radius: 7px; padding: 6px 2px; font-weight: 700; font-size: 11.5px; cursor: pointer; color: var(--muted); }
+.types button { border: 1px solid var(--line); background: var(--surface-2); border-radius: var(--r-btn); padding: 6px 2px; font-weight: 700; font-size: 11.5px; cursor: pointer; color: var(--muted); }
 .types button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
 .swatches { display: flex; flex-wrap: wrap; gap: 7px; align-items: center; }
 .dot { width: 24px; height: 24px; border-radius: 50%; border: 1px solid rgba(0,0,0,.18); cursor: pointer; padding: 0; }
 .dot[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--accent); }
 .hexin { width: 86px; }
 .thumbs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
-.thumbs button, .thumbs label { aspect-ratio: 1; border-radius: 8px; border: 1px solid var(--line); background: var(--surface-2) center / cover no-repeat; cursor: pointer; padding: 0; display: grid; place-items: center; color: var(--muted); font-size: 20px; }
+.thumbs button, .thumbs label { aspect-ratio: 1; border-radius: var(--r-media); border: 1px solid var(--line); background: var(--surface-2) center / cover no-repeat; cursor: pointer; padding: 0; display: grid; place-items: center; color: var(--muted); font-size: 20px; }
 .thumbs button[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--accent); }
 .props { position: absolute; z-index: 4; right: max(12px, env(safe-area-inset-right, 0px)); top: calc(var(--bar, 46px) + 20px + env(safe-area-inset-top, 0px)); width: 290px; max-height: calc(100% - var(--bar, 46px) - 44px); overflow: auto;
-  background: var(--surface); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+  background: var(--surface); border-radius: var(--r-panel); box-shadow: var(--elev); padding: 14px; display: flex; flex-direction: column; gap: 10px; }
 .props h3 { margin: 0; font-size: 15px; }
 .kv { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; font-size: 13px; }
 .kv dt { color: var(--muted); } .kv dd { margin: 0; text-align: right; }
 .total { display: flex; justify-content: space-between; align-items: baseline; font-weight: 800; border-top: 1px solid var(--line); padding-top: 8px; }
-.toast { position: fixed; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); background: var(--fg); color: var(--bg); padding: 9px 16px; border-radius: 10px; z-index: 90; font-weight: 600; box-shadow: var(--shadow); max-width: calc(100% - 32px); }
-.mlabel { position: absolute; z-index: 2; transform: translate(-50%, -140%); background: #a5543f; color: #fff; font-weight: 800; font-size: 13px; padding: 3px 8px; border-radius: 7px; pointer-events: none; white-space: nowrap; font-variant-numeric: tabular-nums; box-shadow: var(--shadow); }
+.toast { position: fixed; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); background: var(--fg); color: var(--bg); padding: 9px 16px; border-radius: var(--r-panel); z-index: 90; font-weight: 600; box-shadow: var(--elev); max-width: calc(100% - 32px); }
+.mlabel { position: absolute; z-index: 2; transform: translate(-50%, -140%); background: #a5543f; color: #fff; font-weight: 800; font-size: 13px; padding: 3px 9px; border-radius: var(--r-btn); pointer-events: none; white-space: nowrap; font-variant-numeric: tabular-nums; box-shadow: var(--elev); }
 .measure { font-size: 28px; font-weight: 800; font-variant-numeric: tabular-nums; }
 .surf { display: flex; align-items: center; gap: 8px; font-size: 13px; }
 .surf .tx { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .surf .tx b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .surf .tx small { color: var(--muted); font-size: 11.5px; }
-.hint { position: absolute; z-index: 3; bottom: calc(14px + env(safe-area-inset-bottom, 0px)); left: 50%; transform: translateX(-50%); color: var(--muted); font-size: 12px; background: var(--surface); border-radius: 8px; padding: 5px 10px; border: 1px solid var(--line); white-space: nowrap; }
+.hint { position: absolute; z-index: 3; bottom: calc(14px + env(safe-area-inset-bottom, 0px)); left: 50%; transform: translateX(-50%); color: var(--muted); font-size: 12px; background: var(--surface); border-radius: var(--r-btn); padding: 5px 12px; box-shadow: var(--elev); white-space: nowrap; }
 @media (max-width: 760px) {
-  .side { top: auto; left: 0; right: 0; bottom: 0; width: auto; height: 46%; border-radius: 14px 14px 0 0; padding-bottom: env(safe-area-inset-bottom, 0px); }
+  .side { top: auto; left: 0; right: 0; bottom: 0; width: auto; height: 46%; border-radius: var(--r-panel) var(--r-panel) 0 0; padding-bottom: env(safe-area-inset-bottom, 0px); }
   .props { left: max(12px, env(safe-area-inset-left, 0px)); right: max(12px, env(safe-area-inset-right, 0px)); width: auto; top: auto; bottom: calc(46% + 8px); max-height: min(34%, calc(54% - var(--bar, 46px) - 36px)); }
   /* Measure and Paint take the bottom sheet's place, so the room above stays free to tap */
-  .props.tool { left: 0; right: 0; bottom: 0; height: 46%; max-height: none; border-radius: 14px 14px 0 0; padding-bottom: calc(14px + env(safe-area-inset-bottom, 0px)); z-index: 5; }
+  .props.tool { left: 0; right: 0; bottom: 0; height: 46%; max-height: none; border-radius: var(--r-panel) var(--r-panel) 0 0; padding-bottom: calc(14px + env(safe-area-inset-bottom, 0px)); z-index: 5; }
   .hint { display: none; }
   .rname { width: 140px; }
   .fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -198,7 +203,7 @@ h2 { margin: 0; font-family: var(--font-display); font-size: 19px; font-weight: 
 <header class="top">
   <div class="top-in">
     <a class="logo" href="#explore" aria-label="Nido Rooms home">
-      <svg width="30" height="30" viewBox="0 0 32 32" aria-hidden="true"><path d="M4 15 16 5l12 10v12H4z" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"/><path d="M10 27v-7h12v7" fill="none" stroke="var(--accent)" stroke-width="2.4" stroke-linejoin="round"/></svg>
+      <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><path d="M7 11.5 12 7.5l5 4V17H7z"/></svg>
       <b>Nido</b>
     </a>
     <nav class="nav" aria-label="Sections">
@@ -1338,6 +1343,84 @@ function fitModel(src, p) {
   m.position.set(-c.x, -b2.min.y, -c.z);
   m.traverse(o => { if (o.isMesh) { o.castShadow = o.receiveShadow = true; } });
   const g = new THREE.Group(); g.add(m); return g;
+}
+
+/* ---------- Product previews: pictures for catalogue cards, from a small renderer of their own ----------
+   productPreview(p, view) resolves to a PNG data URL of the product as rooms draw it (its builder, or its shop's 3D model);
+   a moulding is a short length of strip in wood, cut to its profile. One render at a time; each picture is kept. */
+const PREVIEW_VIEWS = { '3q': [-0.8, 0.7, 1.15], side: [-1, 0.28, 0.02], top: [0.001, 1, 0.012], front: [0, 0.28, 1] };
+const previewCache = new Map();
+let pv = null, pvQueue = Promise.resolve();
+function previewKit() {
+  if (pv) return pv;
+  const r = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+  r.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5)); r.setSize(320, 200, false);
+  r.toneMapping = THREE.NeutralToneMapping; r.shadowMap.enabled = true; r.shadowMap.type = THREE.PCFSoftShadowMap;
+  const s = new THREE.Scene();
+  s.environment = new THREE.PMREMGenerator(r).fromScene(new RoomEnvironment(), 0.04).texture; s.environmentIntensity = 0.35;
+  s.add(new THREE.HemisphereLight(0xffffff, 0xcdbfa8, 1.4), new THREE.AmbientLight(0xffffff, 0.3));
+  const light = new THREE.DirectionalLight(0xfff3e2, 2.4);
+  light.castShadow = true; light.shadow.mapSize.set(1024, 1024); light.shadow.radius = 4; light.shadow.bias = -0.0004; light.shadow.normalBias = 0.02;
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.ShadowMaterial({ opacity: 0.16 }));
+  ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true;
+  const holder = new THREE.Group();
+  s.add(light, light.target, ground, holder);
+  return (pv = { r, s, light, ground, holder, cam: new THREE.PerspectiveCamera(28, 320 / 200, 0.005, 100) });
+}
+/* A moulding's cross-section (u across its face, v its thickness, in metres), drawn like the catalogue's profile drawing. */
+function mouldingShape(m) {
+  const w = m.face, d = m.depth, s = new THREE.Shape();
+  if (m.shape === 'half') { s.moveTo(-w / 2, 0); s.absellipse(0, 0, w / 2, d, Math.PI, 0, true); s.lineTo(-w / 2, 0); }
+  else if (m.shape === 'corner') { const t = Math.max(0.003, Math.min(d, w) * 0.35); s.moveTo(-w / 2, 0); s.lineTo(w / 2, 0); s.lineTo(w / 2, t); s.lineTo(-w / 2 + t, t); s.lineTo(-w / 2 + t, d * 2); s.lineTo(-w / 2, d * 2); s.lineTo(-w / 2, 0); }
+  else if (m.shape === 'profiled') { s.moveTo(-w / 2, 0); s.lineTo(w / 2, 0); s.lineTo(w / 2, d * 0.45); s.quadraticCurveTo(w * 0.3, d * 0.45, w * 0.2, d); s.lineTo(-w / 2, d); s.lineTo(-w / 2, 0); }
+  else { s.moveTo(-w / 2, 0); s.lineTo(w / 2, 0); s.lineTo(w / 2, d); s.lineTo(-w / 2, d); s.lineTo(-w / 2, 0); }
+  return s;
+}
+/* A 30 cm length of a moulding lying face up, its end towards the viewer so the profile shows. */
+function mouldingPiece(m, color) {
+  const len = 0.3, geo = new THREE.ExtrudeGeometry(mouldingShape(m), { depth: len, bevelEnabled: false, curveSegments: 18 });
+  geo.translate(0, 0, -len / 2);
+  const pos = geo.attributes.position, uv = geo.attributes.uv;          // grain along the strip
+  for (let i = 0; i < pos.count; i++) uv.setXY(i, pos.getZ(i) * 2, (pos.getX(i) + pos.getY(i)) * 2);
+  const mesh = new THREE.Mesh(geo, wood(color || '#e0c08f'));
+  mesh.castShadow = mesh.receiveShadow = true;
+  const g = new THREE.Group(); g.add(mesh); return g;
+}
+async function previewObject(p) {
+  if (p.kind === 'moulding' && p.moulding) return mouldingPiece(p.moulding, p.color);
+  if (p.model) { try { return fitModel(await loadModel(p.model), p); } catch (e) { /* drawn by its builder instead */ } }
+  const g = new THREE.Group(); g.add((BUILD[p.kind] || buildBox)(p)); return g;
+}
+function productPreview(p, view = '3q') {
+  const key = [p.ref, view, p.kind, p.w, p.d, p.h, p.color, p.model, p.moulding && JSON.stringify(p.moulding)].join('|');
+  if (previewCache.has(key)) return previewCache.get(key);
+  const job = pvQueue.then(async () => {
+    const k = previewKit(), o = await previewObject(p);
+    k.holder.add(o);
+    const b = new THREE.Box3().setFromObject(o), c = b.getCenter(new THREE.Vector3()), rad = Math.max(0.02, b.getSize(new THREE.Vector3()).length() / 2);
+    const dir = new THREE.Vector3(...PREVIEW_VIEWS[view] || PREVIEW_VIEWS['3q']).normalize();
+    k.cam.up.set(0, view === 'top' ? 0 : 1, view === 'top' ? -1 : 0);
+    k.cam.position.copy(c).addScaledVector(dir, rad / Math.sin(THREE.MathUtils.degToRad(k.cam.fov) / 2) * 0.92);
+    k.cam.near = rad * 0.05; k.cam.far = rad * 20; k.cam.lookAt(c); k.cam.updateProjectionMatrix();
+    // then move in or out so the corners this view sees fill the picture (a long sofa seen end-on is small in its sphere)
+    let ext = 0;
+    k.cam.updateMatrixWorld();                     // project() reads the camera's matrices, which lookAt alone doesn't refresh
+    for (let i = 0; i < 8; i++) { const q = new THREE.Vector3(i & 1 ? b.max.x : b.min.x, i & 2 ? b.max.y : b.min.y, i & 4 ? b.max.z : b.min.z).project(k.cam); ext = Math.max(ext, Math.abs(q.x), Math.abs(q.y)); }
+    if (ext > 0.05) { const dist = k.cam.position.distanceTo(c) * ext / 0.86; k.cam.position.copy(c).addScaledVector(dir, dist); k.cam.lookAt(c); }
+    k.ground.position.set(c.x, b.min.y - 0.0005, c.z); k.ground.scale.setScalar(rad * 8);
+    k.light.position.set(c.x + rad * 1.2, c.y + rad * 3, c.z + rad * 2); k.light.target.position.copy(c);
+    Object.assign(k.light.shadow.camera, { left: -rad * 1.6, right: rad * 1.6, top: rad * 1.6, bottom: -rad * 1.6, near: 0.01, far: rad * 8 });
+    k.light.shadow.camera.updateProjectionMatrix();
+    k.r.render(k.s, k.cam);
+    const blob = await new Promise(res => k.r.domElement.toBlob(res, 'image/webp', 0.9));      // PNG where WebP can't be written
+    k.holder.remove(o); disposeTree(o);
+    if (!blob) throw new Error('no-picture');
+    return URL.createObjectURL(blob);
+  });
+  pvQueue = job.catch(() => {});
+  previewCache.set(key, job);
+  job.catch(() => previewCache.delete(key));
+  return job;
 }
 
 /* ---------- Placed items (positions are in their room's own coordinates) ---------- */
@@ -2672,7 +2755,7 @@ function roomSVG(r, s, ox, oy, wrap) {
     const f = it.rot % 2 ? [it.p.d, it.p.w] : [it.p.w, it.p.d];
     out += `<rect x="${ox + (it.x + r.w / 2 - f[0] / 2) * s}" y="${oy + (it.z + r.l / 2 - f[1] / 2) * s}" width="${f[0] * s}" height="${f[1] * s}" rx="1.5" fill="${it.p.kind === 'rug' ? 'none' : 'var(--accent-soft)'}" stroke="var(--accent)" stroke-width="1"${it.p.kind === 'rug' ? ' stroke-dasharray="3 2"' : ''}/>`;
   }
-  return out + (wrap ? `<text x="100" y="${oy + l + 11 > 122 ? 122 : oy + l + 11}" text-anchor="middle" font-size="9" fill="var(--muted)" font-family="JetBrains Mono, monospace">${cm(r.w)} × ${cm(r.l)}</text></svg>` : '');
+  return out + (wrap ? `<text x="100" y="${oy + l + 11 > 122 ? 122 : oy + l + 11}" text-anchor="middle" font-size="9" fill="var(--muted)" font-family="Geist Mono, monospace">${cm(r.w)} × ${cm(r.l)}</text></svg>` : '');
 }
 
 /* ---------- Router ---------- */
@@ -2693,12 +2776,23 @@ function render() {
   else if (view === 'catalogue') renderCatalogue();
   else if (view === 'shop') renderShop();
 }
+/* The profile menu: your name opens it; a click anywhere else or Escape closes it. */
+function whoMenu(open) {
+  const m = $('who-menu'), b = $('who-btn'); if (!m || !b) return;
+  m.hidden = !open; b.setAttribute('aria-expanded', open);
+  if (open) m.querySelector('[role="menuitem"]').focus();
+}
+document.addEventListener('pointerdown', (e) => { if ($('who-menu') && !$('who-menu').hidden && !e.target.closest('#who')) whoMenu(false); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && $('who-menu') && !$('who-menu').hidden) { whoMenu(false); $('who-btn').focus(); } });
 function renderWho() {
   const el = $('who');
   if (S.cloud) {
     if (!S.uid) { el.innerHTML = '<span>Your homes stay in this browser until you sign in</span><button type="button" class="btn small primary" id="sign-in">Sign in</button>'; return; }
-    el.innerHTML = `<img alt="" src="${esc(S.me.avatarUrl)}"><span></span><button type="button" class="btn small" id="sign-out">Sign out</button>`;
-    el.querySelector('span').textContent = S.me.name || 'You';
+    el.innerHTML = `<button type="button" class="who-btn" id="who-btn" aria-haspopup="menu" aria-expanded="false" aria-controls="who-menu"><img alt="" src="${esc(S.me.avatarUrl)}"><span></span>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
+      <div class="menu" id="who-menu" role="menu" aria-labelledby="who-btn" hidden><div class="menu-h"><b></b><small>Signed in</small></div><button type="button" role="menuitem" id="sign-out">Sign out</button></div>`;
+    el.querySelector('#who-btn span').textContent = S.me.name || 'You';
+    el.querySelector('.menu-h b').textContent = S.me.name || 'You';
     return;
   }
   if (!S.user || !S.uid) { el.innerHTML = '<span>Not signed in · rooms stay in this browser</span>'; return; }
@@ -2845,7 +2939,32 @@ async function importHomeFile(j, fileName) {
 
 /* ---------- Catalogue ---------- */
 let catKind = 'all', catQ = '';
-function productCard(p, actions) {
+/* Products the 3D can draw get pictures made by it (engine.js, productPreview): a three-quarter view, then side, top and
+   front while the pointer is on the picture, or a tap at a time on a phone. A shop's photo, when there is one, comes first. */
+const canPreview = (p) => !!(KINDS[p.kind] || (p.kind === 'moulding' && p.moulding));
+const VIEW_NAMES = { photo: 'Photo', '3q': '3D', side: 'Side', top: 'Top', front: 'Front' };
+let pvObserver = null;
+function wirePreviews(box, list) {
+  if (!pvObserver && 'IntersectionObserver' in window) pvObserver = new IntersectionObserver((es) => { for (const e of es) if (e.isIntersecting) { pvObserver.unobserve(e.target); e.target.pvShow(0); } }, { rootMargin: '300px' });
+  box.querySelectorAll('.pic[data-pv]').forEach(pic => {
+    const p = list[+pic.dataset.pv]; if (!p) return;
+    const views = p.photo ? ['photo', '3q', 'side', 'top'] : ['3q', 'side', 'top', 'front'], img = pic.querySelector('img.pv'), tag = pic.querySelector('.pv-tag');
+    let at = 0, timer = 0;
+    pic.pvShow = (i) => {
+      at = i; const v = views[i];
+      tag.hidden = i === 0; tag.textContent = VIEW_NAMES[v];
+      if (v === 'photo') { img.hidden = true; return; }
+      productPreview(p, v).then(url => { if (views[at] !== v) return; img.src = url; img.hidden = false; const plan = pic.querySelector('.plan'); if (plan) plan.hidden = true; }).catch(() => {});
+      if (i > 0 && views[i + 1]) productPreview(p, views[i + 1]).catch(() => {});   // while pointed at: the next view, ready before it's needed
+    };
+    pic.addEventListener('pointerenter', (e) => { if (e.pointerType !== 'mouse') return; clearInterval(timer); pic.pvShow(1); timer = setInterval(() => pic.pvShow(at + 1 < views.length ? at + 1 : 1), 1100); });
+    pic.addEventListener('pointerleave', (e) => { if (e.pointerType !== 'mouse') return; clearInterval(timer); pic.pvShow(0); });
+    pic.addEventListener('click', (e) => { if (e.pointerType === 'mouse') return; pic.pvShow((at + 1) % views.length); });
+    if (!p.photo) { if (pvObserver) pvObserver.observe(pic); else pic.pvShow(0); }
+  });
+}
+function productCard(p, actions, i) {
+  const pv = canPreview(p) && i !== undefined;
   const pic = p.kind === 'paint' ? `<span style="position:absolute;inset:0;background:${p.color}"></span><span class="pill" style="position:absolute;left:10px;bottom:10px">${esc((p.paint && p.paint.code) || p.color)}</span>`
     : p.kind === 'wallpaper' && p.wallpaper && p.wallpaper.tile ? `<span style="position:absolute;inset:0;background:url(${assetSrc(p.wallpaper.tile)}) 0 0 / ${p.wallpaper.mural ? 'cover' : '33%'} repeat"></span>`
     : p.photo ? `<img alt="" loading="lazy" src="${assetSrc(p.photo)}" onerror="this.remove()">`
@@ -2853,7 +2972,7 @@ function productCard(p, actions) {
     : `<span class="plan"><svg viewBox="0 0 120 75" width="70%" height="70%" aria-hidden="true"><rect x="${60 - p.w / Math.max(p.w, p.d) * 40}" y="${38 - p.d / Math.max(p.w, p.d) * 28}" width="${p.w / Math.max(p.w, p.d) * 80}" height="${p.d / Math.max(p.w, p.d) * 56}" rx="4" fill="${p.color}" stroke="var(--line)"/></svg></span>`;
   const dims = p.kind === 'paint' ? (p.paint ? `${p.paint.tinL.toLocaleString()} L tin · ${p.paint.coverage} m²/L${p.paint.finish ? ' · ' + esc(p.paint.finish) : ''}` : '') : p.kind === 'wallpaper' ? (p.wallpaper ? (p.wallpaper.mural ? 'Mural, made to measure' : `Repeat ${p.wallpaper.width} cm · roll ${p.wallpaper.rollW} cm × ${(p.wallpaper.rollL / 100).toLocaleString()} m`) : '')
     : p.kind === 'moulding' ? (p.moulding ? mouldText(p.moulding) : '') : `${cm(p.w)} × ${cm(p.d)} × ${cm(p.h)} cm`;
-  return `<article class="card"><div class="pic" style="cursor:default">${pic}</div><div class="body">
+  return `<article class="card"><div class="pic" ${pv ? `data-pv="${i}" title="Point at it to see it from other sides"` : 'style="cursor:default"'}>${pic}${pv ? '<img class="pv" alt="" hidden><span class="pill pv-tag" hidden></span>' : ''}</div><div class="body">
     <div class="t" data-name></div><div class="meta"><span data-shop></span>${p.curated ? '<span class="pill" title="Copied from the shop’s website by Nido, not listed by the shop itself">Added by Nido</span>' : ''}${p.model ? '<span class="pill live">3D model</span>' : ''}</div>
     <div class="meta"><span class="num">${dims}</span>${p.price !== null ? `<span class="price">${euro(p.price)}${p.kind === 'wallpaper' ? (p.wallpaper && p.wallpaper.unit === 'm2' ? ' /m²' : ' /roll') : p.kind === 'paint' ? ' /tin' : p.kind === 'moulding' ? ' /strip' : ''}</span>` : ''}</div>
     <div class="row">${actions}${p.url ? `<a class="btn small" href="${esc(p.url)}" target="_blank" rel="noopener">Shop ↗</a>` : ''}</div></div></article>`;
@@ -2879,8 +2998,9 @@ function renderCatalogue() {
   $('cat-kinds').innerHTML = kinds.map(([k, n]) => `<button type="button" class="chip" data-kind="${k}" aria-pressed="${k === catKind}">${esc(n)}</button>`).join('');
   const list = catalogueList(), g = $('catalogue');
   if (!list.length) { g.innerHTML = `<div class="empty" style="grid-column:1/-1"><b>Nothing here yet</b><span>${MATERIALS[catKind] ? `No shop has listed ${MATERIALS[catKind].toLowerCase()} yet.` : 'No products match.'} Shops can list theirs under For shops.</span></div>`; return; }
-  g.innerHTML = list.map(p => productCard(p, MATERIALS[p.kind] ? '' : `<button type="button" class="btn small primary" data-place="${esc(p.ref)}">Place in a room</button>`)).join('');
+  g.innerHTML = list.map((p, i) => productCard(p, MATERIALS[p.kind] ? '' : `<button type="button" class="btn small primary" data-place="${esc(p.ref)}">Place in a room</button>`, i)).join('');
   [...g.querySelectorAll('.card')].forEach((c, i) => { c.querySelector('[data-name]').textContent = list[i].name; c.querySelector('[data-shop]').textContent = list[i].shop; });
+  wirePreviews(g, list);
 }
 $('cat-q').addEventListener('input', (e) => { catQ = e.target.value; renderCatalogue(); });
 function placeInRoomDialog(ref) {
@@ -3140,7 +3260,8 @@ document.addEventListener('click', async (e) => {
   const t = e.target.closest('button, a'); if (!t || t.closest('#studio') || t.closest('#dlg')) return;
   if (t.hasAttribute('data-new-room')) { newRoomDialog(); return; }
   if (t.id === 'sign-in') { S.cloud.signIn(); return; }
-  if (t.id === 'sign-out') { S.cloud.signOut(); return; }
+  if (t.id === 'who-btn') { whoMenu($('who-menu').hidden); return; }
+  if (t.id === 'sign-out') { whoMenu(false); S.cloud.signOut(); return; }
   if (t.dataset.edit) { openEditor(t.dataset.edit); return; }
   if (t.dataset.openPub) { const [o, id] = t.dataset.openPub.split('|'); openViewer(o, id); return; }
   if (t.dataset.dup) {                   // a private copy of one of your homes; pictures are shared, they never change
@@ -3894,8 +4015,9 @@ function pickFurnitureDialog() {
   const draw = () => {
     const list = allProducts().filter(p => !MATERIALS[p.kind] && (kind === 'all' || p.kind === kind) && (!q || (p.name + ' ' + p.shop).toLowerCase().includes(q)));
     const g = $('pick-grid');
-    g.innerHTML = list.map(p => productCard(p, `<button type="button" class="btn small primary" data-add="${esc(p.ref)}">Add</button>`)).join('') || '<p class="note">No products match.</p>';
+    g.innerHTML = list.map((p, i) => productCard(p, `<button type="button" class="btn small primary" data-add="${esc(p.ref)}">Add</button>`, i)).join('') || '<p class="note">No products match.</p>';
     [...g.querySelectorAll('.card')].forEach((c, i) => { c.querySelector('[data-name]').textContent = list[i].name; c.querySelector('[data-shop]').textContent = list[i].shop; });
+    wirePreviews(g, list);
     for (const b of $('dlg-box').querySelectorAll('[data-pk]')) b.setAttribute('aria-pressed', b.dataset.pk === kind);
   };
   const box = openDialog(`<div class="dlg-h"><h2 id="dlg-title">Add furniture</h2><button type="button" class="btn small" data-close>Done</button></div>

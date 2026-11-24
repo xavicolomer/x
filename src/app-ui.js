@@ -42,7 +42,7 @@ function roomSVG(r, s, ox, oy, wrap) {
     const f = it.rot % 2 ? [it.p.d, it.p.w] : [it.p.w, it.p.d];
     out += `<rect x="${ox + (it.x + r.w / 2 - f[0] / 2) * s}" y="${oy + (it.z + r.l / 2 - f[1] / 2) * s}" width="${f[0] * s}" height="${f[1] * s}" rx="1.5" fill="${it.p.kind === 'rug' ? 'none' : 'var(--accent-soft)'}" stroke="var(--accent)" stroke-width="1"${it.p.kind === 'rug' ? ' stroke-dasharray="3 2"' : ''}/>`;
   }
-  return out + (wrap ? `<text x="100" y="${oy + l + 11 > 122 ? 122 : oy + l + 11}" text-anchor="middle" font-size="9" fill="var(--muted)" font-family="JetBrains Mono, monospace">${cm(r.w)} × ${cm(r.l)}</text></svg>` : '');
+  return out + (wrap ? `<text x="100" y="${oy + l + 11 > 122 ? 122 : oy + l + 11}" text-anchor="middle" font-size="9" fill="var(--muted)" font-family="Geist Mono, monospace">${cm(r.w)} × ${cm(r.l)}</text></svg>` : '');
 }
 
 /* ---------- Router ---------- */
@@ -63,12 +63,23 @@ function render() {
   else if (view === 'catalogue') renderCatalogue();
   else if (view === 'shop') renderShop();
 }
+/* The profile menu: your name opens it; a click anywhere else or Escape closes it. */
+function whoMenu(open) {
+  const m = $('who-menu'), b = $('who-btn'); if (!m || !b) return;
+  m.hidden = !open; b.setAttribute('aria-expanded', open);
+  if (open) m.querySelector('[role="menuitem"]').focus();
+}
+document.addEventListener('pointerdown', (e) => { if ($('who-menu') && !$('who-menu').hidden && !e.target.closest('#who')) whoMenu(false); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && $('who-menu') && !$('who-menu').hidden) { whoMenu(false); $('who-btn').focus(); } });
 function renderWho() {
   const el = $('who');
   if (S.cloud) {
     if (!S.uid) { el.innerHTML = '<span>Your homes stay in this browser until you sign in</span><button type="button" class="btn small primary" id="sign-in">Sign in</button>'; return; }
-    el.innerHTML = `<img alt="" src="${esc(S.me.avatarUrl)}"><span></span><button type="button" class="btn small" id="sign-out">Sign out</button>`;
-    el.querySelector('span').textContent = S.me.name || 'You';
+    el.innerHTML = `<button type="button" class="who-btn" id="who-btn" aria-haspopup="menu" aria-expanded="false" aria-controls="who-menu"><img alt="" src="${esc(S.me.avatarUrl)}"><span></span>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
+      <div class="menu" id="who-menu" role="menu" aria-labelledby="who-btn" hidden><div class="menu-h"><b></b><small>Signed in</small></div><button type="button" role="menuitem" id="sign-out">Sign out</button></div>`;
+    el.querySelector('#who-btn span').textContent = S.me.name || 'You';
+    el.querySelector('.menu-h b').textContent = S.me.name || 'You';
     return;
   }
   if (!S.user || !S.uid) { el.innerHTML = '<span>Not signed in · rooms stay in this browser</span>'; return; }
@@ -215,7 +226,32 @@ async function importHomeFile(j, fileName) {
 
 /* ---------- Catalogue ---------- */
 let catKind = 'all', catQ = '';
-function productCard(p, actions) {
+/* Products the 3D can draw get pictures made by it (engine.js, productPreview): a three-quarter view, then side, top and
+   front while the pointer is on the picture, or a tap at a time on a phone. A shop's photo, when there is one, comes first. */
+const canPreview = (p) => !!(KINDS[p.kind] || (p.kind === 'moulding' && p.moulding));
+const VIEW_NAMES = { photo: 'Photo', '3q': '3D', side: 'Side', top: 'Top', front: 'Front' };
+let pvObserver = null;
+function wirePreviews(box, list) {
+  if (!pvObserver && 'IntersectionObserver' in window) pvObserver = new IntersectionObserver((es) => { for (const e of es) if (e.isIntersecting) { pvObserver.unobserve(e.target); e.target.pvShow(0); } }, { rootMargin: '300px' });
+  box.querySelectorAll('.pic[data-pv]').forEach(pic => {
+    const p = list[+pic.dataset.pv]; if (!p) return;
+    const views = p.photo ? ['photo', '3q', 'side', 'top'] : ['3q', 'side', 'top', 'front'], img = pic.querySelector('img.pv'), tag = pic.querySelector('.pv-tag');
+    let at = 0, timer = 0;
+    pic.pvShow = (i) => {
+      at = i; const v = views[i];
+      tag.hidden = i === 0; tag.textContent = VIEW_NAMES[v];
+      if (v === 'photo') { img.hidden = true; return; }
+      productPreview(p, v).then(url => { if (views[at] !== v) return; img.src = url; img.hidden = false; const plan = pic.querySelector('.plan'); if (plan) plan.hidden = true; }).catch(() => {});
+      if (i > 0 && views[i + 1]) productPreview(p, views[i + 1]).catch(() => {});   // while pointed at: the next view, ready before it's needed
+    };
+    pic.addEventListener('pointerenter', (e) => { if (e.pointerType !== 'mouse') return; clearInterval(timer); pic.pvShow(1); timer = setInterval(() => pic.pvShow(at + 1 < views.length ? at + 1 : 1), 1100); });
+    pic.addEventListener('pointerleave', (e) => { if (e.pointerType !== 'mouse') return; clearInterval(timer); pic.pvShow(0); });
+    pic.addEventListener('click', (e) => { if (e.pointerType === 'mouse') return; pic.pvShow((at + 1) % views.length); });
+    if (!p.photo) { if (pvObserver) pvObserver.observe(pic); else pic.pvShow(0); }
+  });
+}
+function productCard(p, actions, i) {
+  const pv = canPreview(p) && i !== undefined;
   const pic = p.kind === 'paint' ? `<span style="position:absolute;inset:0;background:${p.color}"></span><span class="pill" style="position:absolute;left:10px;bottom:10px">${esc((p.paint && p.paint.code) || p.color)}</span>`
     : p.kind === 'wallpaper' && p.wallpaper && p.wallpaper.tile ? `<span style="position:absolute;inset:0;background:url(${assetSrc(p.wallpaper.tile)}) 0 0 / ${p.wallpaper.mural ? 'cover' : '33%'} repeat"></span>`
     : p.photo ? `<img alt="" loading="lazy" src="${assetSrc(p.photo)}" onerror="this.remove()">`
@@ -223,7 +259,7 @@ function productCard(p, actions) {
     : `<span class="plan"><svg viewBox="0 0 120 75" width="70%" height="70%" aria-hidden="true"><rect x="${60 - p.w / Math.max(p.w, p.d) * 40}" y="${38 - p.d / Math.max(p.w, p.d) * 28}" width="${p.w / Math.max(p.w, p.d) * 80}" height="${p.d / Math.max(p.w, p.d) * 56}" rx="4" fill="${p.color}" stroke="var(--line)"/></svg></span>`;
   const dims = p.kind === 'paint' ? (p.paint ? `${p.paint.tinL.toLocaleString()} L tin · ${p.paint.coverage} m²/L${p.paint.finish ? ' · ' + esc(p.paint.finish) : ''}` : '') : p.kind === 'wallpaper' ? (p.wallpaper ? (p.wallpaper.mural ? 'Mural, made to measure' : `Repeat ${p.wallpaper.width} cm · roll ${p.wallpaper.rollW} cm × ${(p.wallpaper.rollL / 100).toLocaleString()} m`) : '')
     : p.kind === 'moulding' ? (p.moulding ? mouldText(p.moulding) : '') : `${cm(p.w)} × ${cm(p.d)} × ${cm(p.h)} cm`;
-  return `<article class="card"><div class="pic" style="cursor:default">${pic}</div><div class="body">
+  return `<article class="card"><div class="pic" ${pv ? `data-pv="${i}" title="Point at it to see it from other sides"` : 'style="cursor:default"'}>${pic}${pv ? '<img class="pv" alt="" hidden><span class="pill pv-tag" hidden></span>' : ''}</div><div class="body">
     <div class="t" data-name></div><div class="meta"><span data-shop></span>${p.curated ? '<span class="pill" title="Copied from the shop’s website by Nido, not listed by the shop itself">Added by Nido</span>' : ''}${p.model ? '<span class="pill live">3D model</span>' : ''}</div>
     <div class="meta"><span class="num">${dims}</span>${p.price !== null ? `<span class="price">${euro(p.price)}${p.kind === 'wallpaper' ? (p.wallpaper && p.wallpaper.unit === 'm2' ? ' /m²' : ' /roll') : p.kind === 'paint' ? ' /tin' : p.kind === 'moulding' ? ' /strip' : ''}</span>` : ''}</div>
     <div class="row">${actions}${p.url ? `<a class="btn small" href="${esc(p.url)}" target="_blank" rel="noopener">Shop ↗</a>` : ''}</div></div></article>`;
@@ -249,8 +285,9 @@ function renderCatalogue() {
   $('cat-kinds').innerHTML = kinds.map(([k, n]) => `<button type="button" class="chip" data-kind="${k}" aria-pressed="${k === catKind}">${esc(n)}</button>`).join('');
   const list = catalogueList(), g = $('catalogue');
   if (!list.length) { g.innerHTML = `<div class="empty" style="grid-column:1/-1"><b>Nothing here yet</b><span>${MATERIALS[catKind] ? `No shop has listed ${MATERIALS[catKind].toLowerCase()} yet.` : 'No products match.'} Shops can list theirs under For shops.</span></div>`; return; }
-  g.innerHTML = list.map(p => productCard(p, MATERIALS[p.kind] ? '' : `<button type="button" class="btn small primary" data-place="${esc(p.ref)}">Place in a room</button>`)).join('');
+  g.innerHTML = list.map((p, i) => productCard(p, MATERIALS[p.kind] ? '' : `<button type="button" class="btn small primary" data-place="${esc(p.ref)}">Place in a room</button>`, i)).join('');
   [...g.querySelectorAll('.card')].forEach((c, i) => { c.querySelector('[data-name]').textContent = list[i].name; c.querySelector('[data-shop]').textContent = list[i].shop; });
+  wirePreviews(g, list);
 }
 $('cat-q').addEventListener('input', (e) => { catQ = e.target.value; renderCatalogue(); });
 function placeInRoomDialog(ref) {
@@ -510,7 +547,8 @@ document.addEventListener('click', async (e) => {
   const t = e.target.closest('button, a'); if (!t || t.closest('#studio') || t.closest('#dlg')) return;
   if (t.hasAttribute('data-new-room')) { newRoomDialog(); return; }
   if (t.id === 'sign-in') { S.cloud.signIn(); return; }
-  if (t.id === 'sign-out') { S.cloud.signOut(); return; }
+  if (t.id === 'who-btn') { whoMenu($('who-menu').hidden); return; }
+  if (t.id === 'sign-out') { whoMenu(false); S.cloud.signOut(); return; }
   if (t.dataset.edit) { openEditor(t.dataset.edit); return; }
   if (t.dataset.openPub) { const [o, id] = t.dataset.openPub.split('|'); openViewer(o, id); return; }
   if (t.dataset.dup) {                   // a private copy of one of your homes; pictures are shared, they never change
@@ -1264,8 +1302,9 @@ function pickFurnitureDialog() {
   const draw = () => {
     const list = allProducts().filter(p => !MATERIALS[p.kind] && (kind === 'all' || p.kind === kind) && (!q || (p.name + ' ' + p.shop).toLowerCase().includes(q)));
     const g = $('pick-grid');
-    g.innerHTML = list.map(p => productCard(p, `<button type="button" class="btn small primary" data-add="${esc(p.ref)}">Add</button>`)).join('') || '<p class="note">No products match.</p>';
+    g.innerHTML = list.map((p, i) => productCard(p, `<button type="button" class="btn small primary" data-add="${esc(p.ref)}">Add</button>`, i)).join('') || '<p class="note">No products match.</p>';
     [...g.querySelectorAll('.card')].forEach((c, i) => { c.querySelector('[data-name]').textContent = list[i].name; c.querySelector('[data-shop]').textContent = list[i].shop; });
+    wirePreviews(g, list);
     for (const b of $('dlg-box').querySelectorAll('[data-pk]')) b.setAttribute('aria-pressed', b.dataset.pk === kind);
   };
   const box = openDialog(`<div class="dlg-h"><h2 id="dlg-title">Add furniture</h2><button type="button" class="btn small" data-close>Done</button></div>

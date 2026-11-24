@@ -497,6 +497,84 @@ function fitModel(src, p) {
   const g = new THREE.Group(); g.add(m); return g;
 }
 
+/* ---------- Product previews: pictures for catalogue cards, from a small renderer of their own ----------
+   productPreview(p, view) resolves to a PNG data URL of the product as rooms draw it (its builder, or its shop's 3D model);
+   a moulding is a short length of strip in wood, cut to its profile. One render at a time; each picture is kept. */
+const PREVIEW_VIEWS = { '3q': [-0.8, 0.7, 1.15], side: [-1, 0.28, 0.02], top: [0.001, 1, 0.012], front: [0, 0.28, 1] };
+const previewCache = new Map();
+let pv = null, pvQueue = Promise.resolve();
+function previewKit() {
+  if (pv) return pv;
+  const r = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+  r.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5)); r.setSize(320, 200, false);
+  r.toneMapping = THREE.NeutralToneMapping; r.shadowMap.enabled = true; r.shadowMap.type = THREE.PCFSoftShadowMap;
+  const s = new THREE.Scene();
+  s.environment = new THREE.PMREMGenerator(r).fromScene(new RoomEnvironment(), 0.04).texture; s.environmentIntensity = 0.35;
+  s.add(new THREE.HemisphereLight(0xffffff, 0xcdbfa8, 1.4), new THREE.AmbientLight(0xffffff, 0.3));
+  const light = new THREE.DirectionalLight(0xfff3e2, 2.4);
+  light.castShadow = true; light.shadow.mapSize.set(1024, 1024); light.shadow.radius = 4; light.shadow.bias = -0.0004; light.shadow.normalBias = 0.02;
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.ShadowMaterial({ opacity: 0.16 }));
+  ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true;
+  const holder = new THREE.Group();
+  s.add(light, light.target, ground, holder);
+  return (pv = { r, s, light, ground, holder, cam: new THREE.PerspectiveCamera(28, 320 / 200, 0.005, 100) });
+}
+/* A moulding's cross-section (u across its face, v its thickness, in metres), drawn like the catalogue's profile drawing. */
+function mouldingShape(m) {
+  const w = m.face, d = m.depth, s = new THREE.Shape();
+  if (m.shape === 'half') { s.moveTo(-w / 2, 0); s.absellipse(0, 0, w / 2, d, Math.PI, 0, true); s.lineTo(-w / 2, 0); }
+  else if (m.shape === 'corner') { const t = Math.max(0.003, Math.min(d, w) * 0.35); s.moveTo(-w / 2, 0); s.lineTo(w / 2, 0); s.lineTo(w / 2, t); s.lineTo(-w / 2 + t, t); s.lineTo(-w / 2 + t, d * 2); s.lineTo(-w / 2, d * 2); s.lineTo(-w / 2, 0); }
+  else if (m.shape === 'profiled') { s.moveTo(-w / 2, 0); s.lineTo(w / 2, 0); s.lineTo(w / 2, d * 0.45); s.quadraticCurveTo(w * 0.3, d * 0.45, w * 0.2, d); s.lineTo(-w / 2, d); s.lineTo(-w / 2, 0); }
+  else { s.moveTo(-w / 2, 0); s.lineTo(w / 2, 0); s.lineTo(w / 2, d); s.lineTo(-w / 2, d); s.lineTo(-w / 2, 0); }
+  return s;
+}
+/* A 30 cm length of a moulding lying face up, its end towards the viewer so the profile shows. */
+function mouldingPiece(m, color) {
+  const len = 0.3, geo = new THREE.ExtrudeGeometry(mouldingShape(m), { depth: len, bevelEnabled: false, curveSegments: 18 });
+  geo.translate(0, 0, -len / 2);
+  const pos = geo.attributes.position, uv = geo.attributes.uv;          // grain along the strip
+  for (let i = 0; i < pos.count; i++) uv.setXY(i, pos.getZ(i) * 2, (pos.getX(i) + pos.getY(i)) * 2);
+  const mesh = new THREE.Mesh(geo, wood(color || '#e0c08f'));
+  mesh.castShadow = mesh.receiveShadow = true;
+  const g = new THREE.Group(); g.add(mesh); return g;
+}
+async function previewObject(p) {
+  if (p.kind === 'moulding' && p.moulding) return mouldingPiece(p.moulding, p.color);
+  if (p.model) { try { return fitModel(await loadModel(p.model), p); } catch (e) { /* drawn by its builder instead */ } }
+  const g = new THREE.Group(); g.add((BUILD[p.kind] || buildBox)(p)); return g;
+}
+function productPreview(p, view = '3q') {
+  const key = [p.ref, view, p.kind, p.w, p.d, p.h, p.color, p.model, p.moulding && JSON.stringify(p.moulding)].join('|');
+  if (previewCache.has(key)) return previewCache.get(key);
+  const job = pvQueue.then(async () => {
+    const k = previewKit(), o = await previewObject(p);
+    k.holder.add(o);
+    const b = new THREE.Box3().setFromObject(o), c = b.getCenter(new THREE.Vector3()), rad = Math.max(0.02, b.getSize(new THREE.Vector3()).length() / 2);
+    const dir = new THREE.Vector3(...PREVIEW_VIEWS[view] || PREVIEW_VIEWS['3q']).normalize();
+    k.cam.up.set(0, view === 'top' ? 0 : 1, view === 'top' ? -1 : 0);
+    k.cam.position.copy(c).addScaledVector(dir, rad / Math.sin(THREE.MathUtils.degToRad(k.cam.fov) / 2) * 0.92);
+    k.cam.near = rad * 0.05; k.cam.far = rad * 20; k.cam.lookAt(c); k.cam.updateProjectionMatrix();
+    // then move in or out so the corners this view sees fill the picture (a long sofa seen end-on is small in its sphere)
+    let ext = 0;
+    k.cam.updateMatrixWorld();                     // project() reads the camera's matrices, which lookAt alone doesn't refresh
+    for (let i = 0; i < 8; i++) { const q = new THREE.Vector3(i & 1 ? b.max.x : b.min.x, i & 2 ? b.max.y : b.min.y, i & 4 ? b.max.z : b.min.z).project(k.cam); ext = Math.max(ext, Math.abs(q.x), Math.abs(q.y)); }
+    if (ext > 0.05) { const dist = k.cam.position.distanceTo(c) * ext / 0.86; k.cam.position.copy(c).addScaledVector(dir, dist); k.cam.lookAt(c); }
+    k.ground.position.set(c.x, b.min.y - 0.0005, c.z); k.ground.scale.setScalar(rad * 8);
+    k.light.position.set(c.x + rad * 1.2, c.y + rad * 3, c.z + rad * 2); k.light.target.position.copy(c);
+    Object.assign(k.light.shadow.camera, { left: -rad * 1.6, right: rad * 1.6, top: rad * 1.6, bottom: -rad * 1.6, near: 0.01, far: rad * 8 });
+    k.light.shadow.camera.updateProjectionMatrix();
+    k.r.render(k.s, k.cam);
+    const blob = await new Promise(res => k.r.domElement.toBlob(res, 'image/webp', 0.9));      // PNG where WebP can't be written
+    k.holder.remove(o); disposeTree(o);
+    if (!blob) throw new Error('no-picture');
+    return URL.createObjectURL(blob);
+  });
+  pvQueue = job.catch(() => {});
+  previewCache.set(key, job);
+  job.catch(() => previewCache.delete(key));
+  return job;
+}
+
 /* ---------- Placed items (positions are in their room's own coordinates) ---------- */
 const meshes = new Map();       // item id -> group
 const fp = (it) => (it.rot % 2 ? { w: it.p.d, d: it.p.w } : { w: it.p.w, d: it.p.d });
