@@ -126,8 +126,32 @@ h2 { margin: 0; font-family: var(--font-display); font-size: 19px; font-weight: 
 
 /* dialog */
 .dlg-back { position: fixed; inset: 0; background: rgba(20, 20, 20, .28); z-index: 60; display: grid; place-items: center; padding: 16px; }
-.dlg { background: var(--surface); border-radius: var(--r-panel); box-shadow: var(--elev); width: min(640px, 100%); max-height: calc(100% - 32px); overflow: auto; padding: 20px; display: flex; flex-direction: column; gap: 14px; }
+.dlg { --pad: 20px; background: var(--surface); border-radius: var(--r-panel); box-shadow: var(--elev); width: min(640px, 100%); max-height: calc(100% - 32px); overflow: auto; padding: var(--pad); display: flex; flex-direction: column; gap: 14px; }
 .dlg-h { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+/* a picker's title, search and filters stay put while its choices scroll under them */
+.dlg-top { position: sticky; top: calc(-1 * var(--pad)); z-index: 4; background: var(--surface); margin: calc(-1 * var(--pad)) calc(-1 * var(--pad)) 0; padding: var(--pad) var(--pad) 12px; display: flex; flex-direction: column; gap: 12px; border-bottom: 1px solid var(--line); }
+/* option cards: one button each, tap to choose */
+.opts { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 12px; }
+.opt { display: flex; flex-direction: column; min-width: 0; padding: 0; text-align: left; font: inherit; color: inherit; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-panel); overflow: hidden; cursor: pointer; }
+.opt:hover { border-color: var(--muted); }
+.opt:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.opt[aria-pressed="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.opt .pic { aspect-ratio: 16 / 10; position: relative; display: block; background: var(--surface-2); overflow: hidden; }
+.opt .pic .plan { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); font-size: 20px; }
+.opt .pic .on { position: absolute; top: 8px; right: 8px; z-index: 2; }
+.opt .body { padding: 10px 12px 12px; display: flex; flex-direction: column; gap: 4px; }
+.opt .t { font-weight: 800; font-size: 13.5px; overflow-wrap: anywhere; }
+.opt .meta { color: var(--muted); font-size: 12px; display: flex; gap: 4px 10px; flex-wrap: wrap; align-items: center; }
+/* in a pane: the chosen material, opening its picker */
+.pickf { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 52px; padding: 5px 10px 5px 5px; text-align: left; font: inherit; color: inherit; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-panel); cursor: pointer; }
+.pickf:hover { border-color: var(--muted); }
+.pickf:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.pickf .thumb { width: 40px; height: 40px; display: grid; place-items: center; overflow: hidden; }
+.pickf .thumb svg { width: 100%; height: 100%; }
+.pickf .tx { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.pickf .tx b { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pickf .tx small { color: var(--muted); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pickf .chev { color: var(--muted); flex: none; }
 
 /* ---------- Studio (3D) ---------- */
 #studio { position: fixed; inset: 0; z-index: 40; background: var(--scene); }
@@ -196,6 +220,14 @@ h2 { margin: 0; font-family: var(--font-display); font-size: 19px; font-weight: 
   .hint { display: none; }
   .rname { width: 140px; }
   .fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  /* pickers take the whole screen on phones */
+  .dlg-back.full { padding: 0; }
+  .dlg-back.full .dlg { --pad: 16px; width: 100% !important; height: 100%; max-height: none; border-radius: 0; box-shadow: none;
+    padding-top: calc(var(--pad) + env(safe-area-inset-top, 0px)); padding-bottom: calc(var(--pad) + env(safe-area-inset-bottom, 0px)); }
+  .dlg-back.full .dlg-top { top: calc(-1 * (var(--pad) + env(safe-area-inset-top, 0px))); margin-top: calc(-1 * (var(--pad) + env(safe-area-inset-top, 0px))); padding-top: calc(var(--pad) + env(safe-area-inset-top, 0px)); }
+  .dlg-back.full .chips { flex-wrap: nowrap; overflow-x: auto; margin: 0 calc(-1 * var(--pad)); padding: 0 var(--pad); scrollbar-width: none; }
+  .dlg-back.full .chips > * { flex: none; white-space: nowrap; }
+  .opts, .dlg-back.full .grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; gap: 10px; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 </style>

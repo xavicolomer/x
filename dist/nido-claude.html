@@ -126,8 +126,32 @@ h2 { margin: 0; font-family: var(--font-display); font-size: 19px; font-weight: 
 
 /* dialog */
 .dlg-back { position: fixed; inset: 0; background: rgba(20, 20, 20, .28); z-index: 60; display: grid; place-items: center; padding: 16px; }
-.dlg { background: var(--surface); border-radius: var(--r-panel); box-shadow: var(--elev); width: min(640px, 100%); max-height: calc(100% - 32px); overflow: auto; padding: 20px; display: flex; flex-direction: column; gap: 14px; }
+.dlg { --pad: 20px; background: var(--surface); border-radius: var(--r-panel); box-shadow: var(--elev); width: min(640px, 100%); max-height: calc(100% - 32px); overflow: auto; padding: var(--pad); display: flex; flex-direction: column; gap: 14px; }
 .dlg-h { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+/* a picker's title, search and filters stay put while its choices scroll under them */
+.dlg-top { position: sticky; top: calc(-1 * var(--pad)); z-index: 4; background: var(--surface); margin: calc(-1 * var(--pad)) calc(-1 * var(--pad)) 0; padding: var(--pad) var(--pad) 12px; display: flex; flex-direction: column; gap: 12px; border-bottom: 1px solid var(--line); }
+/* option cards: one button each, tap to choose */
+.opts { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 12px; }
+.opt { display: flex; flex-direction: column; min-width: 0; padding: 0; text-align: left; font: inherit; color: inherit; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-panel); overflow: hidden; cursor: pointer; }
+.opt:hover { border-color: var(--muted); }
+.opt:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.opt[aria-pressed="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.opt .pic { aspect-ratio: 16 / 10; position: relative; display: block; background: var(--surface-2); overflow: hidden; }
+.opt .pic .plan { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); font-size: 20px; }
+.opt .pic .on { position: absolute; top: 8px; right: 8px; z-index: 2; }
+.opt .body { padding: 10px 12px 12px; display: flex; flex-direction: column; gap: 4px; }
+.opt .t { font-weight: 800; font-size: 13.5px; overflow-wrap: anywhere; }
+.opt .meta { color: var(--muted); font-size: 12px; display: flex; gap: 4px 10px; flex-wrap: wrap; align-items: center; }
+/* in a pane: the chosen material, opening its picker */
+.pickf { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 52px; padding: 5px 10px 5px 5px; text-align: left; font: inherit; color: inherit; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-panel); cursor: pointer; }
+.pickf:hover { border-color: var(--muted); }
+.pickf:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.pickf .thumb { width: 40px; height: 40px; display: grid; place-items: center; overflow: hidden; }
+.pickf .thumb svg { width: 100%; height: 100%; }
+.pickf .tx { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.pickf .tx b { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pickf .tx small { color: var(--muted); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pickf .chev { color: var(--muted); flex: none; }
 
 /* ---------- Studio (3D) ---------- */
 #studio { position: fixed; inset: 0; z-index: 40; background: var(--scene); }
@@ -196,6 +220,14 @@ h2 { margin: 0; font-family: var(--font-display); font-size: 19px; font-weight: 
   .hint { display: none; }
   .rname { width: 140px; }
   .fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  /* pickers take the whole screen on phones */
+  .dlg-back.full { padding: 0; }
+  .dlg-back.full .dlg { --pad: 16px; width: 100% !important; height: 100%; max-height: none; border-radius: 0; box-shadow: none;
+    padding-top: calc(var(--pad) + env(safe-area-inset-top, 0px)); padding-bottom: calc(var(--pad) + env(safe-area-inset-bottom, 0px)); }
+  .dlg-back.full .dlg-top { top: calc(-1 * (var(--pad) + env(safe-area-inset-top, 0px))); margin-top: calc(-1 * (var(--pad) + env(safe-area-inset-top, 0px))); padding-top: calc(var(--pad) + env(safe-area-inset-top, 0px)); }
+  .dlg-back.full .chips { flex-wrap: nowrap; overflow-x: auto; margin: 0 calc(-1 * var(--pad)); padding: 0 var(--pad); scrollbar-width: none; }
+  .dlg-back.full .chips > * { flex: none; white-space: nowrap; }
+  .opts, .dlg-back.full .grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; gap: 10px; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 </style>
@@ -2780,16 +2812,17 @@ const saveShop = saveVendor;
    ===================================================================== */
 let toastTimer = 0;
 function toast(msg) { const t = $('toast'); t.textContent = msg; t.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.hidden = true; }, 4200); }
-function openDialog(html, onClick, onSubmit) {
+/* opts.full: a picker, full screen on phones (its search and filters stay at the top while the choices scroll). */
+function openDialog(html, onClick, onSubmit, opts) {
   const back = $('dlg'), box = $('dlg-box');
-  box.innerHTML = html; back.hidden = false;
+  box.innerHTML = html; back.hidden = false; back.classList.toggle('full', !!(opts && opts.full));
   box.onclick = (e) => { const t = e.target.closest('[data-close]'); if (t) { closeDialog(); return; } onClick && onClick(e); };
   box.onsubmit = (e) => { e.preventDefault(); onSubmit && onSubmit(e); };
   box.onchange = box.oninput = null; box.style.width = '';
   const first = box.querySelector('input, select, button'); first && first.focus();
   return box;
 }
-function closeDialog() { $('dlg').hidden = true; $('dlg-box').innerHTML = ''; }
+function closeDialog() { $('dlg').hidden = true; $('dlg').classList.remove('full'); $('dlg-box').innerHTML = ''; }
 $('dlg').addEventListener('click', (e) => { if (e.target === $('dlg')) closeDialog(); });
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('dlg').hidden) closeDialog(); });
 const sizeText = (r) => `${cm(r.w)} × ${cm(r.l)} cm`;
@@ -3049,21 +3082,29 @@ function wirePreviews(box, list) {
     if (!p.photo) { if (pvObserver) pvObserver.observe(pic); else pic.pvShow(0); }
   });
 }
-function productCard(p, actions, i) {
-  const pv = canPreview(p) && i !== undefined;
-  const pic = p.kind === 'paint' && p.paint && p.paint.mix ? `<span style="position:absolute;inset:0;background:linear-gradient(90deg,#ece6d8 0 20%,#c9d6cf 20% 40%,#e3b9a8 40% 60%,#b4c3d3 60% 80%,#efe0b0 80%)"></span><span class="pill" style="position:absolute;left:10px;bottom:10px">Any colour, mixed in the shop</span>`
+/* A product's picture, size line and price, as catalogue cards and the material picker show them. */
+function productPic(p) {
+  return p.kind === 'paint' && p.paint && p.paint.mix ? `<span style="position:absolute;inset:0;background:linear-gradient(90deg,#ece6d8 0 20%,#c9d6cf 20% 40%,#e3b9a8 40% 60%,#b4c3d3 60% 80%,#efe0b0 80%)"></span><span class="pill" style="position:absolute;left:10px;bottom:10px">Any colour, mixed in the shop</span>`
     : p.kind === 'paint' ? `<span style="position:absolute;inset:0;background:${p.color}"></span><span class="pill" style="position:absolute;left:10px;bottom:10px">${esc((p.paint && p.paint.code) || p.color)}</span>`
     : p.kind === 'wallpaper' && p.wallpaper && p.wallpaper.tile ? `<span style="position:absolute;inset:0;background:url(${assetSrc(p.wallpaper.tile)}) 0 0 / ${p.wallpaper.mural ? 'cover' : '33%'} repeat"></span>`
     : p.kind === 'flooring' ? `<span style="position:absolute;inset:0;background:${p.flooring && p.flooring.tile ? `url(${assetSrc(p.flooring.tile)}) 0 0 / 50% repeat` : p.color}"></span>`
     : p.photo ? `<img alt="" loading="lazy" src="${assetSrc(p.photo)}" onerror="this.remove()">`
     : p.kind === 'moulding' && p.moulding ? `<span class="plan">${profileSvg(p.moulding, p.color)}</span>`
     : `<span class="plan"><svg viewBox="0 0 120 75" width="70%" height="70%" aria-hidden="true"><rect x="${60 - p.w / Math.max(p.w, p.d) * 40}" y="${38 - p.d / Math.max(p.w, p.d) * 28}" width="${p.w / Math.max(p.w, p.d) * 80}" height="${p.d / Math.max(p.w, p.d) * 56}" rx="4" fill="${p.color}" stroke="var(--line)"/></svg></span>`;
-  const dims = p.kind === 'paint' ? (p.paint ? `${p.paint.tinL.toLocaleString()} L tin · ${p.paint.coverage} m²/L${p.paint.finish ? ' · ' + esc(p.paint.finish) : ''}` : '') : p.kind === 'wallpaper' ? (p.wallpaper ? (p.wallpaper.mural ? 'Mural, made to measure' : `Repeat ${p.wallpaper.width} cm · roll ${p.wallpaper.rollW} cm × ${(p.wallpaper.rollL / 100).toLocaleString()} m`) : '')
+}
+function productDims(p) {
+  return p.kind === 'paint' ? (p.paint ? `${p.paint.tinL.toLocaleString()} L tin · ${p.paint.coverage} m²/L${p.paint.finish ? ' · ' + esc(p.paint.finish) : ''}` : '') : p.kind === 'wallpaper' ? (p.wallpaper ? (p.wallpaper.mural ? 'Mural, made to measure' : `Repeat ${p.wallpaper.width} cm · roll ${p.wallpaper.rollW} cm × ${(p.wallpaper.rollL / 100).toLocaleString()} m`) : '')
     : p.kind === 'moulding' ? (p.moulding ? mouldText(p.moulding) : '')
     : p.kind === 'flooring' ? (p.flooring ? `${FLOOR_SURFACES[p.flooring.surface]} · ${p.flooring.pack ? `${p.flooring.pack.toLocaleString()} m² a pack` : 'by the m²'}` : '') : `${cm(p.w)} × ${cm(p.d)} × ${cm(p.h)} cm`;
-  return `<article class="card"><div class="pic" ${pv ? `data-pv="${i}" title="Point at it to see it from other sides"` : 'style="cursor:default"'}>${pic}${pv ? '<img class="pv" alt="" hidden><span class="pill pv-tag" hidden></span>' : ''}</div><div class="body">
+}
+function productPrice(p) {
+  return p.price !== null ? `<span class="price">${euro(p.price)}${p.kind === 'wallpaper' ? (p.wallpaper && p.wallpaper.unit === 'm2' ? ' /m²' : ' /roll') : p.kind === 'paint' ? ' /tin' : p.kind === 'moulding' ? ' /strip' : p.kind === 'flooring' ? (p.flooring && p.flooring.unit === 'pack' ? ' /pack' : ' /m²') : ''}</span>` : p.priceOnSite ? '<span class="note">Price on the shop’s site</span>' : '';
+}
+function productCard(p, actions, i) {
+  const pv = canPreview(p) && i !== undefined;
+  return `<article class="card"><div class="pic" ${pv ? `data-pv="${i}" title="Point at it to see it from other sides"` : 'style="cursor:default"'}>${productPic(p)}${pv ? '<img class="pv" alt="" hidden><span class="pill pv-tag" hidden></span>' : ''}</div><div class="body">
     <div class="t" data-name></div><div class="meta"><span data-shop></span>${p.curated ? '<span class="pill" title="Copied from the shop’s website by Nido, not listed by the shop itself">Added by Nido</span>' : ''}${p.model ? '<span class="pill live">3D model</span>' : ''}</div>
-    <div class="meta"><span class="num">${dims}</span>${p.price !== null ? `<span class="price">${euro(p.price)}${p.kind === 'wallpaper' ? (p.wallpaper && p.wallpaper.unit === 'm2' ? ' /m²' : ' /roll') : p.kind === 'paint' ? ' /tin' : p.kind === 'moulding' ? ' /strip' : p.kind === 'flooring' ? (p.flooring && p.flooring.unit === 'pack' ? ' /pack' : ' /m²') : ''}</span>` : p.priceOnSite ? '<span class="note">Price on the shop’s site</span>' : ''}</div>
+    <div class="meta"><span class="num">${productDims(p)}</span>${productPrice(p)}</div>
     <div class="row">${actions}${shopLink(p.url, p.ref, "Shop ↗", " class=\"btn small\"", "")}</div></div></article>`;
 }
 /* A moulding's size the way shops label it: face × thickness in mm, and the strip's length. */
@@ -3742,12 +3783,13 @@ function finishEditor(f, slot, title) {
   const tw = FIN_TYPES.map(([t, n]) => `<button type="button" data-act="ftype" data-slot="${slot}" data-v="${t}" aria-pressed="${f.type === t}">${n}</button>`).join('');
   let body = '';
   if (f.type === 'paint' || f.type === 'panel') {
-    const all = allProducts().filter(p => p.kind === 'paint' && p.paint), paints = all.filter(p => !p.paint.mix), bases = all.filter(p => p.paint.mix), mixed = !!(f.paint && f.paint.mix);
-    body = `${paints.length ? `<span class="note">Paint from shops</span><div class="swatches">${paints.map(p => `<button type="button" class="dot" data-act="fpaint" data-slot="${slot}" data-ref="${esc(p.ref)}" aria-pressed="${!!f.paint && !mixed && f.paint.ref === p.ref}" title="${esc(p.name)}${p.paint.code ? ' · ' + esc(p.paint.code) : ''} · ${esc(p.shop)}" aria-label="${esc(p.name)}" style="background:${p.color}"></button>`).join('')}</div>` : ''}
-      ${bases.length ? `<label class="field"><span>Mixed in the shop, any colour</span><span class="in"><select data-act="fmix" data-slot="${slot}"><option value="">None</option>${bases.map(p => `<option value="${esc(p.ref)}" ${mixed && f.paint.ref === p.ref ? 'selected' : ''} data-fill="${fills.push(`${p.name} · ${p.shop}${p.price !== null ? ' · ' + euro(p.price) + ' per ' + p.paint.tinL.toLocaleString() + ' L' : ''}`) - 1}"></option>`).join('')}</select></span></label>` : ''}
-      ${mixed ? `<label class="field"><span>Colour code</span><span class="in"><input data-act="fcode" data-slot="${slot}" maxlength="40" value="${esc(f.paint.code)}" placeholder="NCS S 1005-Y20R, RAL 9010, or the tin’s code"></span></label>` : ''}
-      ${f.paint ? `<p class="note"><b data-fill="${fills.push(f.paint.name + (f.paint.shop ? ' · ' + f.paint.shop : '')) - 1}"></b>${f.paint.code ? ' · ' + esc(f.paint.code) : ''}${f.paint.price !== null ? ` · ${euro(f.paint.price)} per ${f.paint.tinL.toLocaleString()} L tin` : ''}${shopLink(f.paint.url, f.paint.ref, "Shop ↗", "", " ")}${mixed ? '. Copy the code from the fan deck or the tin; the shop mixes it. Pick below how it looks on screen.' : ''}</p>${linkDisclosure(f.paint.url, f.paint.ref)}` : ''}
-      <span class="note">${mixed ? 'How it looks on screen' : paints.length || bases.length ? 'Or any colour' : 'Colour'}</span>${swatchRow('fcolor', f.color, slot)}${f.type === 'panel' ? numField('Board width', 'fsize', f.board, `data-slot="${slot}" min="3" max="60" step="1"`) : ''}`;
+    const all = allProducts().filter(p => p.kind === 'paint' && p.paint), mixed = !!(f.paint && f.paint.mix);
+    const cur = f.paint, link = cur ? shopLink(cur.url, cur.ref, 'See it in the shop ↗') : '';
+    body = `${all.length || cur ? pickField('Paint from shops', 'pickpaint', `data-slot="${slot}"`, cur && { thumb: `background:${f.color}`, name: cur.name,
+      sub: subLine(cur.shop, mixed ? 'mixed in the shop' : cur.code, priceEach(cur.price, `a ${cur.tinL.toLocaleString()} L tin`)) }, ['None: any colour below', inShops(all.length, all.length === 1 ? 'paint' : 'paints')]) : ''}
+      ${mixed ? `<label class="field"><span>Colour code</span><span class="in"><input data-act="fcode" data-slot="${slot}" maxlength="40" value="${esc(cur.code)}" placeholder="NCS S 1005-Y20R, RAL 9010, or the tin’s code"></span></label>` : ''}
+      ${mixed || link ? `<p class="note">${mixed ? 'Copy the code from the fan deck or the tin; the shop mixes it. Pick below how it looks on screen.' : ''}${link ? (mixed ? ' ' : '') + link : ''}</p>${linkDisclosure(cur.url, cur.ref)}` : ''}
+      <span class="note">${mixed ? 'How it looks on screen' : all.length ? 'Or any colour' : 'Colour'}</span>${swatchRow('fcolor', f.color, slot)}${f.type === 'panel' ? numField('Board width', 'fsize', f.board, `data-slot="${slot}" min="3" max="60" step="1"`) : ''}`;
   }
   if (f.type === 'pattern') body = `<span class="note">Background</span>${swatchRow('fcolor', f.color, slot)}
     <div class="fields two"><label class="field"><span>Pattern</span><span class="in"><select data-act="fpattern" data-slot="${slot}">${Object.entries(PATTERNS).map(([k, n]) => `<option value="${k}" ${k === f.pattern ? 'selected' : ''}>${n}</option>`).join('')}</select></span></label>
@@ -3755,11 +3797,13 @@ function finishEditor(f, slot, title) {
     ${numField('Pattern size', 'fsize', f.tile, `data-slot="${slot}" min="5" max="300" step="1"`)}`;
   if (f.type === 'image') {
     const { shopWp, mine } = wallpapers(), cur = f.img;
-    body = `<span class="note">From shops</span><div class="thumbs">${shopWp.map(p => `<button type="button" data-act="fimg" data-slot="${slot}" data-ref="${esc(p.ref)}" aria-pressed="${!!cur && cur.ref === p.ref}" title="${esc(p.name)} · ${esc(p.shop)}" style="background-image:url(${assetSrc(p.wallpaper.tile)})"></button>`).join('') || '<span class="note" style="grid-column:1/-1">No shop has listed wallpaper yet.</span>'}</div>
+    const own = cur && cur.ref;
+    body = `${shopWp.length || own ? pickField('Wallpaper from shops', 'pickpaper', `data-slot="${slot}"`, own && { thumb: `background-image:url(${blobSrc(cur.src)})`, name: cur.name,
+      sub: subLine(cur.shop, priceEach(cur.price, cur.unit === 'm2' ? 'a m²' : 'a roll')) }, ['None: one of your images below', inShops(shopWp.length, shopWp.length === 1 ? 'paper' : 'papers')]) : '<p class="note">No shop has listed wallpaper yet.</p>'}
       <span class="note">Your images</span><div class="thumbs">${mine.map(m => `<button type="button" data-act="fmine" data-slot="${slot}" data-src="${esc(m.src)}" aria-pressed="${!!cur && cur.src === m.src && !cur.ref}" style="background-image:url(${blobSrc(m.src)})"></button>`).join('')}
         <label for="up-${slot}" title="Upload an image" aria-label="Upload an image" tabindex="0">+</label></div>
       <input type="file" id="up-${slot}" class="vh" accept="image/*" data-act="fupload" data-slot="${slot}">
-      ${cur ? `<p class="note"><b data-fill="${fills.push(cur.name + (cur.shop ? ' · ' + cur.shop : '')) - 1}"></b>${cur.mural ? '. A mural: one picture stretched to cover this part of the wall.' : `. One repeat is ${cur.width} cm wide.`}${shopLink(cur.url, cur.ref, "Shop ↗", "", " ")}</p>${linkDisclosure(cur.url, cur.ref)}` : '<p class="note">Pick a paper, or upload a photo of a sample.</p>'}
+      ${cur ? `<p class="note">${own ? '' : `<b data-fill="${fills.push(cur.name) - 1}"></b>. `}${cur.mural ? 'A mural: one picture stretched to cover this part of the wall.' : `One repeat is ${cur.width} cm wide.`}${shopLink(cur.url, cur.ref, 'See it in the shop ↗', '', ' ')}</p>${linkDisclosure(cur.url, cur.ref)}` : '<p class="note">Pick a paper, or upload a photo of a sample.</p>'}
       ${cur && !cur.mural && !cur.ref ? numField('Repeat width', 'fsize', f.imgW, `data-slot="${slot}" min="5" max="400" step="1"`) : ''}`;
   }
   return `<div class="finish"><div class="fin-h">${title}</div><div class="types">${tw}</div>${body}</div>`;
@@ -3768,12 +3812,10 @@ function finishEditor(f, slot, title) {
 function mouldPick(act, cur, label) {
   const list = allProducts().filter(p => p.kind === 'moulding' && p.moulding);
   if (!list.length && !cur) return '';
-  const opt = (ref, text, on) => `<option value="${esc(ref)}" ${on ? 'selected' : ''} data-fill="${fills.push(text) - 1}"></option>`;
-  const opts = `<option value="">Any moulding, not from a shop</option>`
-    + list.map(p => opt(p.ref, `${p.name} · ${mm(p.moulding.face)} × ${mm(p.moulding.depth)} mm${p.price !== null ? ' · ' + euro(p.price) : ''} · ${p.shop}`, cur && cur.ref === p.ref)).join('')
-    + (cur && !list.some(p => p.ref === cur.ref) ? opt(cur.ref, `${cur.name} (no longer listed)`, true) : '');
+  const listed = cur && list.some(p => p.ref === cur.ref);
   const plan = cur && mouldingPlan(studio.home.rooms, cur);
-  return `<label class="field"><span>${label}</span><span class="in"><select data-act="${act}">${opts}</select></span></label>
+  return `${pickField(label, 'pickmould', `data-v="${act}"`, cur && { html: profileSvg(cur, '#d8c3a0'), name: cur.name + (listed ? '' : ' (no longer listed)'),
+    sub: subLine(cur.shop, `${mm(cur.face)} × ${mm(cur.depth)} mm`, priceEach(cur.price, 'a strip')) }, ['Any moulding, not from a shop', inShops(list.length, list.length === 1 ? 'moulding' : 'mouldings')])}
     ${plan ? `<div>${plan.text}</div>${plan.cost !== null ? `<div class="price">${euro(plan.cost)}</div>` : ''}
     <p class="note">Across the whole home: each frame side and rail stretch cut from ${cur.len.toLocaleString()} m strips, corners mitred, 5 mm lost a cut.${shopLink(cur.url, cur.ref, "Shop ↗", "", " ")}</p>${linkDisclosure(cur.url, cur.ref)}` : ''}`;
 }
@@ -3890,11 +3932,12 @@ function baseNote(z) {
   if (!b) return `<div class="finish">${box}</div>`;
   const paints = allProducts().filter(p => p.kind === 'paint' && !(p.paint && p.paint.mix)), plan = paintPlan(studio.home.rooms, b), own = b.ref !== 'base:any';
   return `<div class="finish">${box}
-    ${paints.length ? `<span class="note">Paint from shops</span><div class="swatches">${paints.map(p => `<button type="button" class="dot" data-act="fbasepaint" data-slot="${slot}" data-ref="${esc(p.ref)}" aria-pressed="${b.ref === p.ref}" title="${esc(p.name)}${p.paint && p.paint.code ? ' · ' + esc(p.paint.code) : ''} · ${esc(p.shop)}" aria-label="${esc(p.name)}" style="background:${p.color}"></button>`).join('')}</div>` : ''}
-    ${own ? `<p class="note"><b data-fill="${fills.push(b.name + (b.shop ? ' · ' + b.shop : '')) - 1}"></b>${b.code ? ' · ' + esc(b.code) : ''}${b.price !== null ? ` · ${euro(b.price)} per ${b.tinL.toLocaleString()} L tin` : ''}${shopLink(b.url, b.ref, "Shop ↗", "", " ")}</p>${linkDisclosure(b.url, b.ref)}` : ''}
+    ${paints.length || own ? pickField('Paint from shops', 'pickbase', `data-slot="${slot}"`, own && { thumb: `background:${b.color || '#e6e3dc'}`, name: b.name,
+      sub: subLine(b.shop, b.code, priceEach(b.price, `a ${b.tinL.toLocaleString()} L tin`)) }, ['Any paint', inShops(paints.length, paints.length === 1 ? 'paint' : 'paints')]) : ''}
+    ${own && b.url ? `<p class="note">${shopLink(b.url, b.ref, 'See it in the shop ↗')}</p>${linkDisclosure(b.url, b.ref)}` : ''}
     ${numField('Coats', 'fbasecoats', b.coats, `data-slot="${slot}" min="1" max="4" step="1"`, '')}
     <div>${plan.text}</div>${plan.cost !== null ? `<div class="price">${euro(plan.cost)}</div>` : ''}
-    <p class="note">Across the whole home, on every wall papered with this base, windows and doors left out. ${own ? 'Coverage and tin size from the shop; tap the paint again for any paint.' : `Any paint: 10 m² a litre and 4 L tins assumed${paints.length ? '; pick a shop’s paint for its own coverage and price' : ''}.`}</p></div>`;
+    <p class="note">Across the whole home, on every wall papered with this base, windows and doors left out. ${own ? 'Coverage and tin size from the shop.' : `Any paint: 10 m² a litre and 4 L tins assumed${paints.length ? '; pick a shop’s paint for its own coverage and price' : ''}.`}</p></div>`;
 }
 function paperNote(z) {
   const img = [z.f, z.inner].map(f => f && f.type === 'image' && f.img).find(Boolean);
@@ -3924,14 +3967,15 @@ function floorPlan(rooms, fl) {
   const m2 = Math.ceil(need * 10 - 1e-6) / 10;
   return { area, m2, cost: fl.price !== null ? m2 * fl.price : null, text: `${fmt(m2)} m² · ${fmt(area)} m² of floor${tail}` };
 }
-/* Under the built-in floors: the shops' flooring to pick from, and for the one laid here, what the whole home needs. */
+/* Under the built-in floors: the shops' flooring (a field that opens the picker), and for the one laid here, what the whole home needs. */
 function floorNote(r) {
-  const fl = r.flooring, list = allProducts().filter(p => p.kind === 'flooring' && p.flooring), many = studio.home.rooms.length > 1;
-  const pick = list.length ? `<span class="note">Flooring from shops</span><div class="thumbs">${list.map(p => `<button type="button" data-act="flooring" data-ref="${esc(p.ref)}" aria-pressed="${!!fl && fl.ref === p.ref}" title="${esc(p.name)} · ${esc(p.shop)}" aria-label="${esc(p.name)}" style="${p.flooring.tile ? `background-image:url(${assetSrc(p.flooring.tile)})` : `background:${p.color}`}"></button>`).join('')}</div>` : '';
+  const fl = r.flooring, n = allProducts().filter(p => p.kind === 'flooring' && p.flooring).length, many = studio.home.rooms.length > 1;
+  const pick = n || fl ? pickField('Flooring from shops', 'pickfloor', '', fl && { thumb: fl.src ? `background-image:url(${blobSrc(fl.src)})` : `background:${fl.color}`,
+    name: fl.name, sub: subLine(fl.shop, priceEach(fl.price, fl.pack ? `a pack of ${fl.pack.toLocaleString()} m²` : 'a m²')) }, ['None: one of the floors above', inShops(n, n === 1 ? 'floor' : 'floors')]) : '';
   if (!fl) return pick;
-  const plan = floorPlan(studio.home.rooms, fl);
+  const plan = floorPlan(studio.home.rooms, fl), link = shopLink(fl.url, fl.ref, 'See it in the shop ↗');
   return `${pick}<div class="finish"><div class="fin-h">How much flooring</div>
-    <p class="note"><b data-fill="${fills.push(fl.name + (fl.shop ? ' · ' + fl.shop : '')) - 1}"></b>${fl.price !== null ? ` · ${euro(fl.price)} per ${fl.pack ? `pack of ${fl.pack.toLocaleString()} m²` : 'm²'}` : ''}${shopLink(fl.url, fl.ref, "Shop ↗", "", " ")}</p>${linkDisclosure(fl.url, fl.ref)}
+    ${link ? `<p class="note">${link}</p>${linkDisclosure(fl.url, fl.ref)}` : ''}
     ${numField('Extra for cuts', 'floorextra', fl.extra, 'min="0" max="50" step="1"', '%')}
     <div>${plan.text}</div>${plan.cost !== null ? `<div class="price">${euro(plan.cost)}</div>` : ''}
     <p class="note">Across the whole home${many ? ', in every room with this floor' : ''}. ${fl.pack ? 'Pack size from the shop.' : 'Sold by the m².'}${SURFACE_LOOK[fl.surface][2] ? ' Laying it diagonally or in herringbone? Add 15% or more.' : ''}</p>
@@ -4028,7 +4072,11 @@ async function paneEvent(e) {
     changed(true); layoutStudio(); resetView(); renderStudio(); return;
   }
   if (act === 'floor') { r.floor = t.dataset.v; r.flooring = null; changed(true); rerender(); return; }
-  if (act === 'flooring') { const p = allProducts().find(x => x.ref === t.dataset.ref); if (p && p.flooring) { r.flooring = shopFlooring(p, r.flooring); changed(true); rerender(); } return; }
+  if (act === 'pickfloor') {
+    pickMaterial({ kind: 'flooring', title: 'Flooring', cur: r.flooring && r.flooring.ref, none: ['None from a shop', 'The room keeps one of Nido’s floors'],
+      onPick: (p) => { r.flooring = p ? shopFlooring(p, r.flooring) : null; ctx(r); changed(true); renderPane(); } });
+    return;
+  }
   if (act === 'floorextra' && type === 'change' && r.flooring) { const v = +t.value; if (v >= 0 && v <= 50) r.flooring.extra = v; changed(true); rerender(); return; }
   if (act === 'floorall' && r.flooring) { for (const x of studio.home.rooms) x.flooring = { ...r.flooring }; changed(true); rerender(); toast('Every room has this floor now.'); return; }
   if (act === 'opadd') {
@@ -4078,11 +4126,16 @@ async function paneEvent(e) {
   if (act === 'split' && type === 'change') { const v = +t.value / 100; if (v >= 0.2 && v <= r.h - 0.1) cfg.split = v; changed(true); rerender(); return; }
   if (act === 'rail') { cfg.rail = t.checked; changed(true); rerender(); return; }
   if (act === 'railStyle') { cfg.railStyle = t.dataset.v; changed(true); rerender(); return; }
-  if ((act === 'pmould' || act === 'railmould') && type === 'change') {
-    const p = allProducts().find(x => x.ref === t.value && x.kind === 'moulding' && x.moulding), was = act === 'pmould' ? z.moulding : cfg.railM;
-    const m = p ? cleanMoulding({ ref: p.ref, name: p.name, shop: p.shop, url: p.url, price: p.price, ...p.moulding }) : t.value ? was : null;   // a moulding no longer listed stays
-    if (act === 'pmould') z.moulding = m; else cfg.railM = m;
-    changed(true); rerender(); return;
+  if (act === 'pickmould') {              // a moulding no longer listed stays until another is picked
+    const which = t.dataset.v, was = which === 'pmould' ? z.moulding : cfg.railM;
+    pickMaterial({ kind: 'moulding', title: which === 'pmould' ? 'Moulding for the frames' : 'Rail moulding', cur: was && was.ref,
+      none: ['Any moulding, not from a shop', 'Nido draws a plain one and leaves it out of the shopping list'],
+      onPick: (p) => {
+        const m = p ? cleanMoulding({ ref: p.ref, name: p.name, shop: p.shop, url: p.url, price: p.price, ...p.moulding }) : null;
+        if (which === 'pmould') z.moulding = m; else cfg.railM = m;
+        changed(true); renderPane();
+      } });
+    return;
   }
   const hexVal = () => (t.dataset.hex ? (parseHex(t.value) || null) : t.tagName === 'INPUT' ? t.value : t.dataset.v);
   if (act === 'trim') { const h = hexVal(); if (!h && t.dataset.hex) return; cfg.trim = h || null; changed(true); if (type !== 'input') rerender(); return; }
@@ -4123,22 +4176,25 @@ async function paneEvent(e) {
     if (f.paint && f.paint.mix) f.paint.color = h; else f.paint = null;
     changed(true); if (type !== 'input') rerender(); return;
   }
-  if (act === 'fmix' && type === 'change') {
-    const p = allProducts().find(x => x.ref === t.value && x.kind === 'paint' && x.paint && x.paint.mix);
-    f.paint = p ? cleanPaint({ ref: p.ref, name: p.name, shop: p.shop, url: p.url, price: p.price, ...p.paint, mix: true, color: f.color, code: f.paint && f.paint.mix ? f.paint.code : '' }) : null;
-    changed(true); rerender(); if (p) { const c = $('pane').querySelector(`[data-act="fcode"][data-slot="${t.dataset.slot}"]`); if (c && !c.value) c.focus(); } return;
+  if (act === 'pickpaint') {             // a ready-made colour sets the wall's colour; one mixed in the shop keeps it and asks for the code
+    const slot = t.dataset.slot;
+    pickMaterial({ kind: 'paint', title: 'Paint', cur: f.paint && f.paint.ref, none: f.paint ? ['None from a shop', 'Any colour, picked in the panel'] : null,
+      onPick: (p) => {
+        if (!p) f.paint = null;
+        else if (p.paint.mix) f.paint = cleanPaint({ ref: p.ref, name: p.name, shop: p.shop, url: p.url, price: p.price, ...p.paint, mix: true, color: f.color, code: f.paint && f.paint.mix ? f.paint.code : '' });
+        else { f.color = p.color; f.paint = cleanPaint({ ref: p.ref, name: p.name, shop: p.shop, url: p.url, price: p.price, color: p.color, ...p.paint }); }
+        changed(true); renderPane();
+        if (p && p.paint.mix) { const c = $('pane').querySelector(`[data-act="fcode"][data-slot="${slot}"]`); if (c && !c.value) c.focus(); }
+      } });
+    return;
   }
   if (act === 'fcode' && type === 'change' && f.paint && f.paint.mix) { f.paint.code = t.value.trim().slice(0, 40); changed(true); rerender(); return; }
-  if (act === 'fpaint') {
-    const p = allProducts().find(x => x.ref === t.dataset.ref); if (!p) return;
-    f.color = p.color; f.paint = cleanPaint({ ref: p.ref, name: p.name, shop: p.shop, url: p.url, price: p.price, color: p.color, ...(p.paint || {}) });
-    changed(true); rerender(); return;
-  }
   if (act === 'fbase') { f.base = t.checked ? anyBase() : null; changed(true); rerender(); return; }
-  if (act === 'fbasepaint' && f.base) {           // tapping the chosen paint again goes back to any paint
-    const p = allProducts().find(x => x.ref === t.dataset.ref); if (!p) return;
-    f.base = f.base.ref === p.ref ? anyBase(f.base.coats) : cleanPaint({ ref: p.ref, name: p.name, shop: p.shop, url: p.url, price: p.price, color: p.color, ...(p.paint || {}), coats: f.base.coats });
-    changed(true); rerender(); return;
+  if (act === 'pickbase' && f.base) {
+    pickMaterial({ kind: 'paint', title: 'Paint under the wallpaper', list: allProducts().filter(p => p.kind === 'paint' && p.paint && !p.paint.mix),
+      cur: f.base.ref !== 'base:any' ? f.base.ref : null, none: ['Any paint', '10 m² a litre and 4 L tins assumed'],
+      onPick: (p) => { f.base = p ? cleanPaint({ ref: p.ref, name: p.name, shop: p.shop, url: p.url, price: p.price, color: p.color, ...p.paint, coats: f.base.coats }) : anyBase(f.base.coats); changed(true); renderPane(); } });
+    return;
   }
   if (act === 'fbasecoats' && type === 'change' && f.base) { const n = parseInt(t.value, 10); if (n >= 1 && n <= 4) f.base.coats = n; changed(true); rerender(); return; }
   if (act === 'fcolor2') { f.color2 = t.value; changed(true); return; }
@@ -4147,7 +4203,11 @@ async function paneEvent(e) {
     const v = +t.value, key = f.type === 'pattern' ? 'tile' : f.type === 'panel' ? 'board' : 'imgW';
     if (v >= 3 && v <= 400) f[key] = v; changed(true); rerender(); return;
   }
-  if (act === 'fimg') { const p = allProducts().find(x => x.ref === t.dataset.ref); if (p) { applyShopPaper(f, p); f.type = 'image'; changed(true); rerender(); } return; }
+  if (act === 'pickpaper') {
+    pickMaterial({ kind: 'wallpaper', title: 'Wallpaper', list: wallpapers().shopWp, cur: f.img && f.img.ref,
+      onPick: (p) => { if (p) { applyShopPaper(f, p); f.type = 'image'; changed(true); renderPane(); } } });
+    return;
+  }
   if (act === 'fmine') { const m = wallpapers().mine.find(x => x.src === t.dataset.src); if (m) { f.img = { ...m }; f.imgW = m.width; f.type = 'image'; changed(true); rerender(); } return; }
   if (act === 'fupload' && type === 'change') {
     const file = t.files && t.files[0]; t.value = ''; if (!file) return;
@@ -4187,18 +4247,74 @@ function pickFurnitureDialog() {
     gridDisclosure(g, list);
     for (const b of $('dlg-box').querySelectorAll('[data-pk]')) b.setAttribute('aria-pressed', b.dataset.pk === kind);
   };
-  const box = openDialog(`<div class="dlg-h"><h2 id="dlg-title">Add furniture</h2><button type="button" class="btn small" data-close>Done</button></div>
+  const box = openDialog(`<div class="dlg-top"><div class="dlg-h"><h2 id="dlg-title">Add furniture</h2><button type="button" class="btn small" data-close>Done</button></div>
     <label class="in" for="pick-q"><input id="pick-q" type="search" placeholder="Search products or shops" aria-label="Search products or shops"></label>
-    <div class="chips">${[['all', 'Everything'], ...Object.entries(KINDS).filter(([k]) => k !== 'box')].map(([k, n]) => `<button type="button" class="chip" data-pk="${k}" aria-pressed="${k === 'all'}">${esc(n)}</button>`).join('')}</div>
+    <div class="chips">${[['all', 'Everything'], ...Object.entries(KINDS).filter(([k]) => k !== 'box')].map(([k, n]) => `<button type="button" class="chip" data-pk="${k}" aria-pressed="${k === 'all'}">${esc(n)}</button>`).join('')}</div></div>
     <div class="grid" id="pick-grid" style="grid-template-columns:repeat(auto-fill,minmax(170px,1fr))"></div>`,
   (e) => {
     const k = e.target.closest('[data-pk]'); if (k) { kind = k.dataset.pk; draw(); return; }
     const a = e.target.closest('[data-add]'); if (a) { addProduct(a.dataset.add); toast('Added to the room. Drag it into place.'); }
-  });
+  }, null, { full: true });
   box.oninput = (e) => { if (e.target.id === 'pick-q') { q = e.target.value.trim().toLowerCase(); draw(); } };
   $('dlg-box').style.width = 'min(860px, 100%)';
   draw();
 }
+
+/* ---------- Picking a material: flooring, paint, wallpaper, moulding ---------- */
+/* What tells one material's products apart, for the dialog's one row of filters (shown when there are two kinds or more). */
+const MATERIAL_FACETS = {
+  flooring: (p) => [p.flooring.surface, FLOOR_SURFACES[p.flooring.surface]],
+  paint: (p) => (p.paint.mix ? ['mix', 'Mixed in the shop'] : ['ready', 'Ready-made colours']),
+  wallpaper: (p) => (p.wallpaper.mural ? ['mural', 'Murals'] : ['roll', 'By the roll']),
+  moulding: (p) => [p.moulding.shape, MOULD_SHAPES[p.moulding.shape]],
+};
+/* The shops' products of one material as option cards: search, filters, tap one to choose it. Full screen on phones.
+   o: { kind, title, cur: the chosen ref, list: the products (default: all of that kind), none: [label, note] for "not from a shop",
+   onPick(product, or null for none) } */
+function pickMaterial(o) {
+  const all = (o.list || allProducts().filter(p => p.kind === o.kind)).filter(p => p[o.kind]);
+  const facets = new Map(all.map(MATERIAL_FACETS[o.kind]));
+  let facet = 'all', q = '';
+  const draw = () => {
+    const list = all.filter(p => (facet === 'all' || MATERIAL_FACETS[o.kind](p)[0] === facet)
+      && (!q || [p.name, p.shop, p.material, p.paint && p.paint.code].join(' ').toLowerCase().includes(q)));
+    const none = o.none && facet === 'all' && !q ? `<button type="button" class="opt" data-pick="" aria-pressed="${!o.cur}"><span class="pic"><span class="plan" aria-hidden="true">—</span>${!o.cur ? '<span class="pill live on">✓ Chosen</span>' : ''}</span>
+      <span class="body"><span class="t">${esc(o.none[0])}</span><span class="meta">${esc(o.none[1])}</span></span></button>` : '';
+    const g = $('pick-grid');
+    g.innerHTML = none + list.map(p => { const on = p.ref === o.cur; return `<button type="button" class="opt" data-pick="${esc(p.ref)}" aria-pressed="${on}"><span class="pic">${productPic(p)}${on ? '<span class="pill live on">✓ Chosen</span>' : ''}</span>
+      <span class="body"><span class="t" data-name></span><span class="meta" data-shop></span><span class="meta"><span class="num">${productDims(p)}</span>${productPrice(p)}</span></span></button>`; }).join('')
+      || `<p class="note" style="grid-column:1/-1">${all.length ? 'Nothing matches. Try another word or filter.' : `No shop has listed ${MATERIALS[o.kind].toLowerCase()} yet.`}</p>`;
+    [...g.querySelectorAll('[data-name]')].forEach((el, i) => { el.textContent = list[i].name; });
+    [...g.querySelectorAll('[data-shop]')].forEach((el, i) => { el.textContent = list[i].shop; });
+    for (const b of $('dlg-box').querySelectorAll('[data-facet]')) b.setAttribute('aria-pressed', b.dataset.facet === facet);
+  };
+  const box = openDialog(`<div class="dlg-top"><div class="dlg-h"><h2 id="dlg-title">${esc(o.title)}</h2><button type="button" class="btn small" data-close>Close</button></div>
+    <label class="in" for="pick-q"><input id="pick-q" type="search" placeholder="Search by name or shop${o.kind === 'paint' ? ', or a colour code' : ''}" aria-label="Search ${esc(o.title.toLowerCase())}"></label>
+    ${facets.size > 1 ? `<div class="chips">${[['all', 'All'], ...facets].map(([k, n]) => `<button type="button" class="chip" data-facet="${esc(k)}" aria-pressed="${k === 'all'}">${esc(n)}</button>`).join('')}</div>` : ''}</div>
+    <div class="opts" id="pick-grid"></div>`,
+  (e) => {
+    const c = e.target.closest('[data-facet]'); if (c) { facet = c.dataset.facet; draw(); return; }
+    const b = e.target.closest('[data-pick]'); if (!b) return;
+    const p = b.dataset.pick ? all.find(x => x.ref === b.dataset.pick) : null;
+    if (b.dataset.pick && !p) return;
+    closeDialog(); o.onPick(p);
+  }, null, { full: true });
+  box.oninput = (e) => { if (e.target.id === 'pick-q') { q = e.target.value.trim().toLowerCase(); draw(); } };
+  box.style.width = 'min(860px, 100%)';
+  draw();
+}
+/* In a pane: the chosen material as one field (its picture, name, shop and price) that opens the picker.
+   cur: { thumb: the thumb's style, html: inside it, name, sub } (names are untrusted: set as text), or null and empty: [line, small line]. */
+function pickField(label, act, attrs, cur, empty) {
+  return `<div class="field"><span>${label}</span><button type="button" class="pickf" data-act="${act}" ${attrs} aria-haspopup="dialog">
+    <span class="thumb" style="${cur && cur.thumb || ''}">${cur && cur.html || ''}</span>
+    <span class="tx">${cur ? `<b data-fill="${fills.push(cur.name) - 1}"></b><small data-fill="${fills.push(cur.sub) - 1}"></small>` : `<b>${esc(empty[0])}</b><small>${esc(empty[1])}</small>`}</span>
+    <svg class="chev" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg></button></div>`;
+}
+const MIX_SWATCH = 'background:linear-gradient(90deg,#ece6d8 0 20%,#c9d6cf 20% 40%,#e3b9a8 40% 60%,#b4c3d3 60% 80%,#efe0b0 80%)';
+const subLine = (...parts) => parts.filter(Boolean).join(' · ');
+const priceEach = (price, per) => (price !== null && price !== undefined ? `${euro(price)} ${per}` : '');
+const inShops = (n, what) => `${n} ${what} in the shops`;
 function addProduct(ref) {
   if (!studio || studio.mode !== 'edit') return;
   const p = allProducts().find(x => x.ref === ref); if (!p) return;
