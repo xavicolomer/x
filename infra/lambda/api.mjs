@@ -12,6 +12,7 @@ import { createPresignedPost } from '@aws-sdk/s3-presigned-post';
 import { randomBytes } from 'node:crypto';
 import ikea from '../../src/data/ikea-es.json' with { type: 'json' };
 import serveiEstacio from '../../src/data/servei-estacio.json' with { type: 'json' };
+import nidoPaint from '../../src/data/nido-paint.json' with { type: 'json' };
 
 const MAX_DOC = 350 * 1024;              // DynamoDB items are at most 400 KB
 const MAX_SUMMARY = 4 * 1024;
@@ -19,8 +20,9 @@ export const MAX_UPLOAD = 10 * 1024 * 1024;
 export const UPLOAD_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'application/json']);
 const ID = /^[\w-]{1,60}$/, OWNER = /^[\w-]{1,80}$/;
 
-/* Catalogues that ship with the app (read-only, so they cost nothing to store). */
-export const BUILTIN_SHOPS = [{ id: 'ikea-es', doc: JSON.stringify(ikea) }, { id: 'servei-estacio', doc: JSON.stringify(serveiEstacio) }];
+/* Catalogues that ship with the app (read-only, so they cost nothing to store). Nido Paint is provisional: a stand-in
+   brand for wall paint, linking to Amazon, until a paint shop's own catalogue is in Nido. */
+export const BUILTIN_SHOPS = [{ id: 'ikea-es', doc: JSON.stringify(ikea) }, { id: 'servei-estacio', doc: JSON.stringify(serveiEstacio) }, { id: 'nido-paint', doc: JSON.stringify(nidoPaint) }];
 
 /* db: a DynamoDB document client (anything with send(command)); presign({ key, type }) -> { url, fields }. */
 export function makeHandler({ db, presign, table, now = () => Date.now(), builtinShops = BUILTIN_SHOPS }) {

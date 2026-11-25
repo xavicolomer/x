@@ -44,15 +44,18 @@ test('drafts are private to each person', async () => {
   assert.equal((await call(h, 'GET /api/me/drafts', { user: as('ana') })).body.drafts.length, 0);
 });
 
-test('shops: the built-in catalogues (IKEA, Servei Estació) plus each person\'s own shop', async () => {
+test('shops: the built-in catalogues (IKEA, Servei Estació, Nido Paint) plus each person\'s own shop', async () => {
   const h = setup();
   let shops = (await call(h, 'GET /api/shops')).body.shops;
-  assert.deepEqual(shops.map(s => s.id), ['ikea-es', 'servei-estacio']);
+  assert.deepEqual(shops.map(s => s.id), ['ikea-es', 'servei-estacio', 'nido-paint']);
   assert.ok(JSON.parse(shops[0].doc).products.length > 50);
   assert.ok(JSON.parse(shops[1].doc).products.every(p => p.kind === 'moulding' && p.moulding.len === 2.4));
+  const paint = JSON.parse(shops[2].doc);                  // provisional: every colour links to Amazon, prices stay there
+  assert.ok(paint.priceOnSite && paint.products.every(p => p.type === 'paint'));
+  assert.ok(paint.offers.length === paint.products.length && paint.offers.every(o => o.url.startsWith('https://www.amazon.es/')));
   await call(h, 'PUT /api/shops/me', { body: { doc: { name: 'Casa Lino', products: [] } }, user: as('ana') });
   shops = (await call(h, 'GET /api/shops')).body.shops;
-  assert.deepEqual(shops.map(s => s.id), ['ikea-es', 'servei-estacio', 'ana']);
+  assert.deepEqual(shops.map(s => s.id), ['ikea-es', 'servei-estacio', 'nido-paint', 'ana']);
 });
 
 test('shops: only admins write a vendor other than their own, and theirs replaces a built-in one', async () => {
@@ -62,7 +65,7 @@ test('shops: only admins write a vendor other than their own, and theirs replace
   assert.equal((await put('ana', as('ana'))).status, 200);                 // your own id is fine
   assert.equal((await put('servei-estacio', as('nido-admin', 'Admin', '[admins]'))).status, 200);
   const shops = (await call(h, 'GET /api/shops')).body.shops;
-  assert.deepEqual(shops.map(s => s.id).sort(), ['ana', 'ikea-es', 'servei-estacio']);
+  assert.deepEqual(shops.map(s => s.id).sort(), ['ana', 'ikea-es', 'nido-paint', 'servei-estacio']);
   assert.deepEqual(JSON.parse(shops.find(s => s.id === 'servei-estacio').doc).offers, []);
 });
 

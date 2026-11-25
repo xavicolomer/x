@@ -1,0 +1,425 @@
+{
+ "name": "Nido Paint",
+ "url": "https://www.amazon.es/s?k=pintura+pared+mate",
+ "curated": true,
+ "about": "Provisional: a stand-in brand for wall paint until a paint shop’s own catalogue is in Nido. Each colour links to matching paints on Amazon; Nido’s admins add the affiliate tag in the vendor form.",
+ "logo": null,
+ "locations": [],
+ "products": [
+  {
+   "id": "np-white",
+   "type": "paint",
+   "name": "White",
+   "about": "Wall paint in this colour, matt. A stand-in until a paint shop lists its own; the link searches Amazon for paints like it.",
+   "unit": "tin",
+   "price": null,
+   "currency": "EUR",
+   "color": "#f6f5f1",
+   "specs": [
+    {
+     "key": "tin",
+     "label": "Tin size",
+     "value": 4,
+     "unit": "L"
+    },
+    {
+     "key": "coverage",
+     "label": "Covers",
+     "value": 10,
+     "unit": "m2/L"
+    },
+    {
+     "key": "coats",
+     "label": "Coats",
+     "value": 2,
+     "unit": ""
+    },
+    {
+     "key": "finish",
+     "label": "Finish",
+     "value": "Matt",
+     "unit": ""
+    }
+   ]
+  },
+  {
+   "id": "np-marfil",
+   "type": "paint",
+   "name": "Marfil",
+   "about": "Wall paint in this colour, matt. A stand-in until a paint shop lists its own; the link searches Amazon for paints like it.",
+   "unit": "tin",
+   "price": null,
+   "currency": "EUR",
+   "color": "#eee2d3",
+   "specs": [
+    {
+     "key": "tin",
+     "label": "Tin size",
+     "value": 4,
+     "unit": "L"
+    },
+    {
+     "key": "coverage",
+     "label": "Covers",
+     "value": 10,
+     "unit": "m2/L"
+    },
+    {
+     "key": "coats",
+     "label": "Coats",
+     "value": 2,
+     "unit": ""
+    },
+    {
+     "key": "finish",
+     "label": "Finish",
+     "value": "Matt",
+     "unit": ""
+    }
+   ]
+  },
+  {
+   "id": "np-sand",
+   "type": "paint",
+   "name": "Sand",
+   "about": "Wall paint in this colour, matt. A stand-in until a paint shop lists its own; the link searches Amazon for paints like it.",
+   "unit": "tin",
+   "price": null,
+   "currency": "EUR",
+   "color": "#e2d1b9",
+   "specs": [
+    {
+     "key": "tin",
+     "label": "Tin size",
+     "value": 4,
+     "unit": "L"
+    },
+    {
+     "key": "coverage",
+     "label": "Covers",
+     "value": 10,
+     "unit": "m2/L"
+    },
+    {
+     "key": "coats",
+     "label": "Coats",
+     "value": 2,
+     "unit": ""
+    },
+    {
+     "key": "finish",
+     "label": "Finish",
+     "value": "Matt",
+     "unit": ""
+    }
+   ]
+  },
+  {
+   "id": "np-rosa-arcilla",
+   "type": "paint",
+   "name": "Rosa arcilla",
+   "about": "Wall paint in this colour, matt. A stand-in until a paint shop lists its own; the link searches Amazon for paints like it.",
+   "unit": "tin",
+   "price": null,
+   "currency": "EUR",
+   "color": "#d9a195",
+   "specs": [
+    {
+     "key": "tin",
+     "label": "Tin size",
+     "value": 4,
+     "unit": "L"
+    },
+    {
+     "key": "coverage",
+     "label": "Covers",
+     "value": 10,
+     "unit": "m2/L"
+    },
+    {
+     "key": "coats",
+     "label": "Coats",
+     "value": 2,
+     "unit": ""
+    },
+    {
+     "key": "finish",
+     "label": "Finish",
+     "value": "Matt",
+     "unit": ""
+    }
+   ]
+  },
+  {
+   "id": "np-terracota",
+   "type": "paint",
+   "name": "Terracota",
+   "about": "Wall paint in this colour, matt. A stand-in until a paint shop lists its own; the link searches Amazon for paints like it.",
+   "unit": "tin",
+   "price": null,
+   "currency": "EUR",
+   "color": "#c8705d",
+   "specs": [
+    {
+     "key": "tin",
+     "label": "Tin size",
+     "value": 4,
+     "unit": "L"
+    },
+    {
+     "key": "coverage",
+     "label": "Covers",
+     "value": 10,
+     "unit": "m2/L"
+    },
+    {
+     "key": "coats",
+     "label": "Coats",
+     "value": 2,
+     "unit": ""
+    },
+    {
+     "key": "finish",
+     "label": "Finish",
+     "value": "Matt",
+     "unit": ""
+    }
+   ]
+  },
+  {
+   "id": "np-azul-grisaceo",
+   "type": "paint",
+   "name": "Azul grisáceo",
+   "about": "Wall paint in this colour, matt. A stand-in until a paint shop lists its own; the link searches Amazon for paints like it.",
+   "unit": "tin",
+   "price": null,
+   "currency": "EUR",
+   "color": "#9aaeb6",
+   "specs": [
+    {
+     "key": "tin",
+     "label": "Tin size",
+     "value": 4,
+     "unit": "L"
+    },
+    {
+     "key": "coverage",
+     "label": "Covers",
+     "value": 10,
+     "unit": "m2/L"
+    },
+    {
+     "key": "coats",
+     "label": "Coats",
+     "value": 2,
+     "unit": ""
+    },
+    {
+     "key": "finish",
+     "label": "Finish",
+     "value": "Matt",
+     "unit": ""
+    }
+   ]
+  },
+  {
+   "id": "np-topo-rosado",
+   "type": "paint",
+   "name": "Topo rosado",
+   "about": "Wall paint in this colour, matt. A stand-in until a paint shop lists its own; the link searches Amazon for paints like it.",
+   "unit": "tin",
+   "price": null,
+   "currency": "EUR",
+   "color": "#b5968d",
+   "specs": [
+    {
+     "key": "tin",
+     "label": "Tin size",
+     "value": 4,
+     "unit": "L"
+    },
+    {
+     "key": "coverage",
+     "label": "Covers",
+     "value": 10,
+     "unit": "m2/L"
+    },
+    {
+     "key": "coats",
+     "label": "Coats",
+     "value": 2,
+     "unit": ""
+    },
+    {
+     "key": "finish",
+     "label": "Finish",
+     "value": "Matt",
+     "unit": ""
+    }
+   ]
+  },
+  {
+   "id": "np-sage",
+   "type": "paint",
+   "name": "Sage",
+   "about": "Wall paint in this colour, matt. A stand-in until a paint shop lists its own; the link searches Amazon for paints like it.",
+   "unit": "tin",
+   "price": null,
+   "currency": "EUR",
+   "color": "#bac7b1",
+   "specs": [
+    {
+     "key": "tin",
+     "label": "Tin size",
+     "value": 4,
+     "unit": "L"
+    },
+    {
+     "key": "coverage",
+     "label": "Covers",
+     "value": 10,
+     "unit": "m2/L"
+    },
+    {
+     "key": "coats",
+     "label": "Coats",
+     "value": 2,
+     "unit": ""
+    },
+    {
+     "key": "finish",
+     "label": "Finish",
+     "value": "Matt",
+     "unit": ""
+    }
+   ]
+  },
+  {
+   "id": "np-butter",
+   "type": "paint",
+   "name": "Butter",
+   "about": "Wall paint in this colour, matt. A stand-in until a paint shop lists its own; the link searches Amazon for paints like it.",
+   "unit": "tin",
+   "price": null,
+   "currency": "EUR",
+   "color": "#f2e3b3",
+   "specs": [
+    {
+     "key": "tin",
+     "label": "Tin size",
+     "value": 4,
+     "unit": "L"
+    },
+    {
+     "key": "coverage",
+     "label": "Covers",
+     "value": 10,
+     "unit": "m2/L"
+    },
+    {
+     "key": "coats",
+     "label": "Coats",
+     "value": 2,
+     "unit": ""
+    },
+    {
+     "key": "finish",
+     "label": "Finish",
+     "value": "Matt",
+     "unit": ""
+    }
+   ]
+  },
+  {
+   "id": "np-charcoal",
+   "type": "paint",
+   "name": "Charcoal",
+   "about": "Wall paint in this colour, matt. A stand-in until a paint shop lists its own; the link searches Amazon for paints like it.",
+   "unit": "tin",
+   "price": null,
+   "currency": "EUR",
+   "color": "#4a4d4b",
+   "specs": [
+    {
+     "key": "tin",
+     "label": "Tin size",
+     "value": 4,
+     "unit": "L"
+    },
+    {
+     "key": "coverage",
+     "label": "Covers",
+     "value": 10,
+     "unit": "m2/L"
+    },
+    {
+     "key": "coats",
+     "label": "Coats",
+     "value": 2,
+     "unit": ""
+    },
+    {
+     "key": "finish",
+     "label": "Finish",
+     "value": "Matt",
+     "unit": ""
+    }
+   ]
+  }
+ ],
+ "offers": [
+  {
+   "id": "o-np-white",
+   "productId": "np-white",
+   "url": "https://www.amazon.es/s?k=pintura+pared+blanco+roto+mate"
+  },
+  {
+   "id": "o-np-marfil",
+   "productId": "np-marfil",
+   "url": "https://www.amazon.es/s?k=pintura+pared+marfil+mate"
+  },
+  {
+   "id": "o-np-sand",
+   "productId": "np-sand",
+   "url": "https://www.amazon.es/s?k=pintura+pared+arena+mate"
+  },
+  {
+   "id": "o-np-rosa-arcilla",
+   "productId": "np-rosa-arcilla",
+   "url": "https://www.amazon.es/s?k=pintura+pared+rosa+arcilla+mate"
+  },
+  {
+   "id": "o-np-terracota",
+   "productId": "np-terracota",
+   "url": "https://www.amazon.es/s?k=pintura+pared+terracota+mate"
+  },
+  {
+   "id": "o-np-azul-grisaceo",
+   "productId": "np-azul-grisaceo",
+   "url": "https://www.amazon.es/s?k=pintura+pared+azul+gris+mate"
+  },
+  {
+   "id": "o-np-topo-rosado",
+   "productId": "np-topo-rosado",
+   "url": "https://www.amazon.es/s?k=pintura+pared+topo+rosado+mate"
+  },
+  {
+   "id": "o-np-sage",
+   "productId": "np-sage",
+   "url": "https://www.amazon.es/s?k=pintura+pared+verde+salvia+mate"
+  },
+  {
+   "id": "o-np-butter",
+   "productId": "np-butter",
+   "url": "https://www.amazon.es/s?k=pintura+pared+amarillo+mantequilla+mate"
+  },
+  {
+   "id": "o-np-charcoal",
+   "productId": "np-charcoal",
+   "url": "https://www.amazon.es/s?k=pintura+pared+gris+antracita+mate"
+  }
+ ],
+ "affiliate": null,
+ "priceOnSite": true,
+ "updatedAt": 1795651200000
+}

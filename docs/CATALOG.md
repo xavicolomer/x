@@ -58,6 +58,12 @@ A flooring product (parquet, laminate, tiles, stone, vinyl, linoleum, cork, micr
 
 Specs are converted between units of the same kind (`mm`, `cm`, `m`; `ml`, `L`), so a vendor can type a width in cm or mm. Rows with a name and unit the type doesn't know are kept and shown, but nothing reads them.
 
+## Built-in catalogues
+
+Three vendors ship with the app, in `src/data/`: IKEA España, Servei Estació, and **Nido Paint**. The offline app seeds them (`SHOP_SEEDS`, written by `build.mjs`) and the API serves them (`BUILTIN_SHOPS` in `infra/lambda/api.mjs`). An admin's own `shops/<id>` with the same id replaces one, which is how its affiliate tag is set.
+
+Nido Paint is **provisional**: a stand-in brand for wall paint until a paint shop's own catalogue is in Nido. Its ten colours are the app's preset colours, matt, in 4 L tins; each links to a search for paints like it on Amazon (`amazon.es`), so every Nido Paint link can earn a commission once an admin adds the Amazon tag and its disclosure in the vendor form. It keeps `priceOnSite`, as Amazon's rules require, so it shows no prices. Replace it, or remove it from `src/data/`, `build.mjs` and `BUILTIN_SHOPS`, when a real paint catalogue arrives.
+
 ## Old shop documents
 
 Shops saved before this (products with `kind`, `w`, `d`, `h`, `paint`, `wallpaper` or `moulding`, and their own `price` and `url`) are read as products plus one offer each. The built-in IKEA and Servei Estació catalogues are still in that format. A product keeps the reference `shop:<vendorId>:<productId>`, so rooms that already use it still find it.

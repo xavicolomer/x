@@ -16,7 +16,7 @@ Always run `npm run build` after editing `src/`: `dist/` is committed and is wha
 
 ## How it fits together
 
-- `src/*.js` are not ES modules. `build.mjs` concatenates them into one scope in this order: `engine.js` (with `finish.js` inserted at `/*@@FINISH@@*/`), `runtime-local.js`, `runtime-aws.js`, `app-data.js`, `app-ui.js`. Then it bundles three.js with esbuild and inlines fonts and `src/data/ikea-es.json`. Top-level names are shared across files, so check for clashes when adding them.
+- `src/*.js` are not ES modules. `build.mjs` concatenates them into one scope in this order: `engine.js` (with `finish.js` inserted at `/*@@FINISH@@*/`), `runtime-local.js`, `runtime-aws.js`, `app-data.js`, `catalog.js`, `app-ui.js`. Then it bundles three.js with esbuild and inlines fonts and the built-in catalogues in `src/data/` (IKEA España, Servei Estació, and the provisional Nido Paint; see `docs/CATALOG.md`). Top-level names are shared across files, so check for clashes when adding them.
 - The app talks to storage only through a "runtime" with the calls `db`, `user`, `assets`, `downloads` (shaped like the claude.ai artifact platform). `connect()` in `app-data.js` picks one:
   - inside claude.ai: `window.claude`;
   - served with a `config.json` naming an API: `awsRuntime(cfg)` (Cognito sign-in, the Lambda API, S3 uploads);
