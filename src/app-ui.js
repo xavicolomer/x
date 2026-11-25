@@ -226,6 +226,28 @@ async function importHomeFile(j, fileName) {
 
 /* ---------- Catalogue ---------- */
 let catKind = 'all', catQ = '';
+/* A link to buy something, with its vendor's affiliate tracking (catalog.js, buyLink); marked sponsored when it has some. */
+function shopLink(url, ref, label = 'Shop ↗', attrs = '', lead = '') {
+  if (!url) return '';
+  const { href, sponsored } = buyLink(url, ref);
+  return `${lead}<a${attrs} href="${esc(href)}" target="_blank" rel="${sponsored ? 'sponsored noopener' : 'noopener'}">${label}</a>`;
+}
+/* The disclosure for a set of products, when any of their links earn Nido a commission: each vendor's own wording, or Nido's. */
+function disclosureFor(items) {
+  const out = new Set();
+  for (const { url, ref } of items) { const b = url && buyLink(url, ref); if (b && b.sponsored) out.add(b.vendor.affiliate.disclosure || 'Some shop links earn Nido a commission, at no extra cost to you.'); }
+  return [...out].join(' ');
+}
+/* Under a single shop link (a piece's panel, a wall's paint, paper or moulding): its disclosure, when it earns a commission. */
+function linkDisclosure(url, ref) {
+  const d = disclosureFor([{ url, ref }]);
+  return d ? `<p class="note">${esc(d)}</p>` : '';
+}
+/* Under a grid of product cards (the Catalogue, Add furniture): the disclosure, across the whole row. */
+function gridDisclosure(g, list) {
+  const d = disclosureFor(list);
+  if (d) g.insertAdjacentHTML('beforeend', `<p class="note" style="grid-column:1/-1">${esc(d)}</p>`);
+}
 /* Products the 3D can draw get pictures made by it (engine.js, productPreview): a three-quarter view, then side, top and
    front while the pointer is on the picture, or a tap at a time on a phone. A shop's photo, when there is one, comes first. */
 const canPreview = (p) => !!(KINDS[p.kind] || (p.kind === 'moulding' && p.moulding));
@@ -252,17 +274,20 @@ function wirePreviews(box, list) {
 }
 function productCard(p, actions, i) {
   const pv = canPreview(p) && i !== undefined;
-  const pic = p.kind === 'paint' ? `<span style="position:absolute;inset:0;background:${p.color}"></span><span class="pill" style="position:absolute;left:10px;bottom:10px">${esc((p.paint && p.paint.code) || p.color)}</span>`
+  const pic = p.kind === 'paint' && p.paint && p.paint.mix ? `<span style="position:absolute;inset:0;background:linear-gradient(90deg,#ece6d8 0 20%,#c9d6cf 20% 40%,#e3b9a8 40% 60%,#b4c3d3 60% 80%,#efe0b0 80%)"></span><span class="pill" style="position:absolute;left:10px;bottom:10px">Any colour, mixed in the shop</span>`
+    : p.kind === 'paint' ? `<span style="position:absolute;inset:0;background:${p.color}"></span><span class="pill" style="position:absolute;left:10px;bottom:10px">${esc((p.paint && p.paint.code) || p.color)}</span>`
     : p.kind === 'wallpaper' && p.wallpaper && p.wallpaper.tile ? `<span style="position:absolute;inset:0;background:url(${assetSrc(p.wallpaper.tile)}) 0 0 / ${p.wallpaper.mural ? 'cover' : '33%'} repeat"></span>`
+    : p.kind === 'flooring' ? `<span style="position:absolute;inset:0;background:${p.flooring && p.flooring.tile ? `url(${assetSrc(p.flooring.tile)}) 0 0 / 50% repeat` : p.color}"></span>`
     : p.photo ? `<img alt="" loading="lazy" src="${assetSrc(p.photo)}" onerror="this.remove()">`
     : p.kind === 'moulding' && p.moulding ? `<span class="plan">${profileSvg(p.moulding, p.color)}</span>`
     : `<span class="plan"><svg viewBox="0 0 120 75" width="70%" height="70%" aria-hidden="true"><rect x="${60 - p.w / Math.max(p.w, p.d) * 40}" y="${38 - p.d / Math.max(p.w, p.d) * 28}" width="${p.w / Math.max(p.w, p.d) * 80}" height="${p.d / Math.max(p.w, p.d) * 56}" rx="4" fill="${p.color}" stroke="var(--line)"/></svg></span>`;
   const dims = p.kind === 'paint' ? (p.paint ? `${p.paint.tinL.toLocaleString()} L tin · ${p.paint.coverage} m²/L${p.paint.finish ? ' · ' + esc(p.paint.finish) : ''}` : '') : p.kind === 'wallpaper' ? (p.wallpaper ? (p.wallpaper.mural ? 'Mural, made to measure' : `Repeat ${p.wallpaper.width} cm · roll ${p.wallpaper.rollW} cm × ${(p.wallpaper.rollL / 100).toLocaleString()} m`) : '')
-    : p.kind === 'moulding' ? (p.moulding ? mouldText(p.moulding) : '') : `${cm(p.w)} × ${cm(p.d)} × ${cm(p.h)} cm`;
+    : p.kind === 'moulding' ? (p.moulding ? mouldText(p.moulding) : '')
+    : p.kind === 'flooring' ? (p.flooring ? `${FLOOR_SURFACES[p.flooring.surface]} · ${p.flooring.pack ? `${p.flooring.pack.toLocaleString()} m² a pack` : 'by the m²'}` : '') : `${cm(p.w)} × ${cm(p.d)} × ${cm(p.h)} cm`;
   return `<article class="card"><div class="pic" ${pv ? `data-pv="${i}" title="Point at it to see it from other sides"` : 'style="cursor:default"'}>${pic}${pv ? '<img class="pv" alt="" hidden><span class="pill pv-tag" hidden></span>' : ''}</div><div class="body">
     <div class="t" data-name></div><div class="meta"><span data-shop></span>${p.curated ? '<span class="pill" title="Copied from the shop’s website by Nido, not listed by the shop itself">Added by Nido</span>' : ''}${p.model ? '<span class="pill live">3D model</span>' : ''}</div>
-    <div class="meta"><span class="num">${dims}</span>${p.price !== null ? `<span class="price">${euro(p.price)}${p.kind === 'wallpaper' ? (p.wallpaper && p.wallpaper.unit === 'm2' ? ' /m²' : ' /roll') : p.kind === 'paint' ? ' /tin' : p.kind === 'moulding' ? ' /strip' : ''}</span>` : ''}</div>
-    <div class="row">${actions}${p.url ? `<a class="btn small" href="${esc(p.url)}" target="_blank" rel="noopener">Shop ↗</a>` : ''}</div></div></article>`;
+    <div class="meta"><span class="num">${dims}</span>${p.price !== null ? `<span class="price">${euro(p.price)}${p.kind === 'wallpaper' ? (p.wallpaper && p.wallpaper.unit === 'm2' ? ' /m²' : ' /roll') : p.kind === 'paint' ? ' /tin' : p.kind === 'moulding' ? ' /strip' : p.kind === 'flooring' ? (p.flooring && p.flooring.unit === 'pack' ? ' /pack' : ' /m²') : ''}</span>` : p.priceOnSite ? '<span class="note">Price on the shop’s site</span>' : ''}</div>
+    <div class="row">${actions}${shopLink(p.url, p.ref, "Shop ↗", " class=\"btn small\"", "")}</div></div></article>`;
 }
 /* A moulding's size the way shops label it: face × thickness in mm, and the strip's length. */
 const mm = (m) => Math.round(m * 1000);
@@ -281,13 +306,14 @@ function catalogueList() {
   return allProducts().filter(p => (catKind === 'all' || p.kind === catKind) && (!q || (p.name + ' ' + p.shop).toLowerCase().includes(q)));
 }
 function renderCatalogue() {
-  const kinds = [['all', 'Everything'], ...Object.entries(KINDS).filter(([k]) => k !== 'box'), ['wallpaper', 'Wallpaper'], ['paint', 'Paint'], ['moulding', 'Mouldings']];
+  const kinds = [['all', 'Everything'], ...Object.entries(KINDS).filter(([k]) => k !== 'box'), ['flooring', 'Flooring'], ['wallpaper', 'Wallpaper'], ['paint', 'Paint'], ['moulding', 'Mouldings']];
   $('cat-kinds').innerHTML = kinds.map(([k, n]) => `<button type="button" class="chip" data-kind="${k}" aria-pressed="${k === catKind}">${esc(n)}</button>`).join('');
   const list = catalogueList(), g = $('catalogue');
   if (!list.length) { g.innerHTML = `<div class="empty" style="grid-column:1/-1"><b>Nothing here yet</b><span>${MATERIALS[catKind] ? `No shop has listed ${MATERIALS[catKind].toLowerCase()} yet.` : 'No products match.'} Shops can list theirs under For shops.</span></div>`; return; }
   g.innerHTML = list.map((p, i) => productCard(p, MATERIALS[p.kind] ? '' : `<button type="button" class="btn small primary" data-place="${esc(p.ref)}">Place in a room</button>`, i)).join('');
   [...g.querySelectorAll('.card')].forEach((c, i) => { c.querySelector('[data-name]').textContent = list[i].name; c.querySelector('[data-shop]').textContent = list[i].shop; });
   wirePreviews(g, list);
+  gridDisclosure(g, list);
 }
 $('cat-q').addEventListener('input', (e) => { catQ = e.target.value; renderCatalogue(); });
 function placeInRoomDialog(ref) {
@@ -332,7 +358,11 @@ function renderShop() {
     shopSeen = sig;
     $('shop-name').value = v ? v.name : ''; $('shop-url').value = (v && v.url) || ''; $('shop-about').value = v ? v.about : '';
     renderLocations(v ? v.locations : []);
+    const a = (v && v.affiliate) || {};
+    $('aff-mode').value = a.mode || ''; $('aff-template').value = a.template || ''; $('aff-param').value = a.param || ''; $('aff-value').value = a.value || '';
+    $('aff-disclosure').value = a.disclosure || ''; $('aff-onsite').checked = !!(v && v.priceOnSite);
   }
+  $('aff-box').hidden = !S.isAdmin; syncAffiliate();
   const logo = pendingLogo || (v && v.logo);
   $('shop-logo-prev').style.backgroundImage = logo ? `url(${assetSrc(logo)})` : '';
   $('shop-status').textContent = can ? (v ? `Live in the catalogue · ${v.products.length} product${v.products.length === 1 ? '' : 's'}` : own ? 'Save your shop, then add products.' : 'Save this vendor, then add its products.') : (accessNote() || 'Listing products needs Contributor access.');
@@ -348,6 +378,9 @@ function renderShop() {
   }).join('')}</tbody></table></div>`;
   [...box.querySelectorAll('[data-pn]')].forEach((b, i) => { b.textContent = list[i].name; });
 }
+/* Only the fields of the tracking chosen: a deep-link template, or a parameter and its value. */
+function syncAffiliate() { const m = $('aff-mode').value; $('aff-template-row').hidden = m !== 'wrap'; $('aff-param-row').hidden = m !== 'param'; }
+$('aff-mode').addEventListener('change', syncAffiliate);
 /* Where people can see the products in person: a name, an address and a link to it on a map. */
 function renderLocations(locs) {
   $('shop-locs').innerHTML = locs.map(() => `<div class="locrow"><div class="fields">
@@ -381,6 +414,12 @@ $('shop-form').addEventListener('submit', async (e) => {
   if ($('shop-url').value.trim() && !v.url) { $('shop-status').textContent = 'The website needs to start with https://'; return; }
   const bad = [...$('shop-locs').querySelectorAll('[data-loc="map"]')].find(i => i.value.trim() && !safeUrl(i.value.trim()));
   if (bad) { $('shop-status').textContent = 'Map links need to start with https://'; bad.focus(); return; }
+  if (S.isAdmin) {                       // affiliate tracking is Nido's own, so only admins set it
+    const mode = $('aff-mode').value;
+    v.affiliate = mode ? cleanAffiliate({ mode, template: $('aff-template').value.trim(), param: $('aff-param').value.trim(), value: $('aff-value').value.trim(), disclosure: $('aff-disclosure').value.trim() }) : null;
+    if (mode && !v.affiliate) { $('shop-status').textContent = mode === 'wrap' ? 'The deep link needs to start with https:// and contain {url}.' : 'The parameter and value can only use letters, numbers, dots and dashes.'; return; }
+    v.priceOnSite = $('aff-onsite').checked;
+  }
   try { await saveVendor(v); pendingLogo = null; $('shop-status').textContent = v.curated ? 'Saved. This vendor is in the catalogue.' : 'Saved. Your shop is in the catalogue.'; }
   catch (er) { $('shop-status').textContent = 'Couldn’t save. Check your access and try again.'; }
 });
@@ -408,7 +447,7 @@ function productDialog(pid) {
   const p = cur ? JSON.parse(JSON.stringify(cur)) : cleanCatalogProduct({ type: 'moulding' });
   const o = curOffer ? { ...curOffer } : cleanOffer({ productId: p.id });
   let rows = specRows(p.type, p.specs);
-  const typeOpts = [['furniture', 'In rooms'], ['wall', 'On walls']].map(([g, n]) => `<optgroup label="${n}">${Object.entries(TYPES).filter(([, T]) => T.group === g).map(([k, T]) => `<option value="${k}" ${k === p.type ? 'selected' : ''}>${esc(T.label)}</option>`).join('')}</optgroup>`).join('');
+  const typeOpts = [['furniture', 'In rooms'], ['floor', 'On floors'], ['wall', 'On walls']].map(([g, n]) => `<optgroup label="${n}">${Object.entries(TYPES).filter(([, T]) => T.group === g).map(([k, T]) => `<option value="${k}" ${k === p.type ? 'selected' : ''}>${esc(T.label)}</option>`).join('')}</optgroup>`).join('');
   const box = openDialog(`<form id="pf" style="display:flex;flex-direction:column;gap:12px">
     <div class="dlg-h"><h2 id="dlg-title">${cur ? 'Edit product' : 'Add a product'}</h2><button type="button" class="btn small" data-close>Close</button></div>
     <div class="fields two">
@@ -453,6 +492,7 @@ function productDialog(pid) {
     const missing = T.specs.find(s => s.need && !(rows.find(r => r.key === s.key && typeof r.value === 'number' && r.value > 0)));
     if (missing) { $('pf-status').textContent = `Fill in the ${missing.label.toLowerCase()}.`; return; }
     if (p.type === 'wallpaper' && !p.image) { $('pf-status').textContent = 'Upload the pattern first: one repeat, cut so it tiles.'; return; }
+    if (p.type === 'flooring' && p.unit === 'pack' && !rows.find(r => r.key === 'pack' && typeof r.value === 'number' && r.value > 0)) { $('pf-status').textContent = 'Fill in how much one pack covers, or sell it by the m².'; return; }
     p.specs = rows.filter(r => r.value !== '' && r.key).map(({ key, label, value, unit, price }) => ({ key, label, value, unit, price, currency: p.currency }));
     if (T.group !== 'furniture') p.model = null;
     o.url = safeUrl($('pf-url').value.trim()); o.sku = $('pf-sku').value.trim().slice(0, 40);
@@ -491,14 +531,15 @@ function productDialog(pid) {
     });
   }
   const sync = () => {
-    const T = TYPES[$('pf-type').value], wp = $('pf-type').value === 'wallpaper', pt = $('pf-type').value === 'paint', u = $('pf-unit');
+    const T = TYPES[$('pf-type').value], wp = $('pf-type').value === 'wallpaper', pt = $('pf-type').value === 'paint', fl = $('pf-type').value === 'flooring', u = $('pf-unit');
     const keep = T.sold.includes(u.value) ? u.value : T.sold.includes(p.unit) ? p.unit : T.sold[0];
     u.innerHTML = T.sold.map(x => `<option value="${x}">${esc(unitLabel(x))}</option>`).join(''); u.value = keep;
     $('pf-price-lab').textContent = `Price per ${unitLabel(u.value)}`;
     $('pf-model-row').hidden = T.group !== 'furniture';
-    $('pf-color-lab').textContent = pt ? 'Colour, as close as a screen can show it' : T.group === 'furniture' ? 'Main colour (when there’s no 3D model)' : 'Colour';
-    $('pf-photo-lab').textContent = wp ? 'Upload the pattern' : 'Upload a photo';
-    $('pf-photo-note').textContent = wp ? 'One repeat of the pattern, cut so it tiles seamlessly (a mural: the whole picture).' : 'A photo for the catalogue.';
+    $('pf-color-lab').textContent = pt ? 'Colour, as close as a screen can show it' : T.group === 'furniture' ? 'Main colour (when there’s no 3D model)' : fl ? 'Colour (when there’s no picture)' : 'Colour';
+    $('pf-photo-lab').textContent = wp ? 'Upload the pattern' : fl ? 'Upload the floor' : 'Upload a photo';
+    $('pf-photo-note').textContent = wp ? 'One repeat of the pattern, cut so it tiles seamlessly (a mural: the whole picture).'
+      : fl ? 'A photo straight down at the floor, cut so it tiles seamlessly. Give the width of floor it shows in the specs.' : 'A photo for the catalogue.';
     $('pf-photo-prev').style.backgroundImage = p.image ? `url(${assetSrc(p.image)})` : '';
     $('pf-model-note').textContent = p.model ? '3D model uploaded. Upload another to replace it.' : 'Optional: a .glb file, scaled to the width, depth and height.';
   };
@@ -802,7 +843,7 @@ function addRoomDialog() {
     const w = +$('ar-w').value / 100, l = +$('ar-l').value / 100, hh = +$('ar-h').value / 100;
     if (!(w >= 1 && l >= 1 && hh >= 2)) return;
     const o = h.rooms[+$('ar-next').value], side = $('ar-side').value;
-    const r = cleanRoom({ name: $('ar-name').value.trim() || 'Room', w, l, h: hh, floor: o.floor });
+    const r = cleanRoom({ name: $('ar-name').value.trim() || 'Room', w, l, h: hh, floor: o.floor, flooring: o.flooring });
     placeBeside(o, r, side);
     if ($('ar-door').checked) { const d = doorBetween(o, r, side); if (d) r.openings.push(d); }
     h.rooms.push(r);
@@ -826,7 +867,8 @@ function roomPane() {
     <div class="fields">${numField('Width', 'dim', cm(r.w), 'data-k="w" min="100" max="1500" step="1"')}${numField('Length', 'dim', cm(r.l), 'data-k="l" min="100" max="1500" step="1"')}${numField('Ceiling', 'dim', cm(r.h), 'data-k="h" min="200" max="500" step="1"')}</div>
     <p class="note">Width runs along the back and front walls, length along the left and right walls. “From the left” is measured facing the wall.</p>
     <div class="sec-h">Floor</div>
-    <div class="chips">${Object.entries(FLOORS).map(([k, [n]]) => `<button type="button" class="chip" data-act="floor" data-v="${k}" aria-pressed="${r.floor === k}">${n}</button>`).join('')}</div>
+    <div class="chips">${Object.entries(FLOORS).map(([k, [n]]) => `<button type="button" class="chip" data-act="floor" data-v="${k}" aria-pressed="${!r.flooring && r.floor === k}">${n}</button>`).join('')}</div>
+    ${floorNote(r)}
     <div class="sec-h">Windows, doors and radiators</div>
     ${ops || '<p class="note">None yet.</p>'}
     <div style="display:flex;gap:6px;flex-wrap:wrap">${Object.entries(OP_KINDS).map(([k, n]) => `<button type="button" class="btn small" data-act="opadd" data-v="${k}">Add ${n.toLowerCase()}</button>`).join('')}</div>
@@ -843,7 +885,7 @@ function furniturePane() {
 }
 function fillFurnitureNames() { const rows = $('pane').querySelectorAll('[data-act="sel"] b'); studio.room.items.forEach((it, i) => { if (rows[i]) rows[i].textContent = it.p.name; }); }
 
-/* Shopping list: furniture grouped by product, wallpaper rolls worked out from the walls. */
+/* Shopping list: furniture grouped by product, flooring packs from the rooms, wallpaper rolls, paint tins and moulding strips from the walls. */
 function shopping(home) {
   const groups = new Map(), rooms = home.rooms;
   for (const it of rooms.flatMap(x => x.items)) {
@@ -854,43 +896,53 @@ function shopping(home) {
   for (const r of rooms) for (const wid of WALL_IDS) for (const z of [r.walls[wid].lo, r.walls[wid].hi]) for (const f of [z.f, z.inner]) if (f && f.type === 'image' && f.img && f.img.ref) papers.set(f.img.ref, f.img);
   const paperRows = [...papers.values()].map(img => ({ img, plan: paperPlan(rooms, img) })).filter(x => x.plan.uses.length);
   const paints = new Map();
-  for (const r of rooms) for (const wid of WALL_IDS) for (const z of [r.walls[wid].lo, r.walls[wid].hi]) for (const f of [z.f, z.inner]) { if (f && f.paint) paints.set(f.paint.ref, f.paint); if (f && f.type === 'image' && f.base) paints.set(f.base.ref, f.base); }
+  for (const r of rooms) for (const wid of WALL_IDS) for (const z of [r.walls[wid].lo, r.walls[wid].hi]) for (const f of [z.f, z.inner]) { for (const m of [f && f.paint, f && f.type === 'image' && f.base]) if (m && !paints.has(paintKey(m))) paints.set(paintKey(m), m); }   // the first wall names the line
   const paintRows = [...paints.values()].map(paint => ({ paint, plan: paintPlan(rooms, paint) })).filter(x => x.plan.tins);
   const moulds = new Map();
   for (const r of rooms) for (const wid of WALL_IDS) { const w = r.walls[wid]; for (const m of [w.railM, w.lo.moulding, w.hi.moulding]) if (m) moulds.set(m.ref, m); }
   const mouldRows = [...moulds.values()].map(m => ({ m, plan: mouldingPlan(rooms, m) })).filter(x => x.plan.strips);
+  const floors = new Map();
+  for (const r of rooms) if (r.flooring && !floors.has(r.flooring.ref)) floors.set(r.flooring.ref, r.flooring);     // the first room names the line
+  const floorRows = [...floors.values()].map(fl => ({ fl, plan: floorPlan(rooms, fl) }));
   let total = 0, missing = 0;
-  for (const g of groups.values()) { if (g.p.price !== null) total += g.p.price * g.n; else if (!g.p.ref.startsWith('basic:')) missing++; }
+  let onSite = 0;
+  for (const g of groups.values()) { if (g.p.price !== null) total += g.p.price * g.n; else if (priceOnSite(g.p.ref)) onSite++; else if (!g.p.ref.startsWith('basic:')) missing++; }
   for (const x of paperRows) if (x.plan.cost !== null) total += x.plan.cost;
   for (const x of paintRows) if (x.plan.cost !== null) total += x.plan.cost;
   for (const x of mouldRows) if (x.plan.cost !== null) total += x.plan.cost;
-  return { groups: [...groups.values()], paperRows, paintRows, mouldRows, total, missing };
+  for (const x of floorRows) if (x.plan.cost !== null) total += x.plan.cost;
+  return { groups: [...groups.values()], floorRows, paperRows, paintRows, mouldRows, total, missing, onSite };
 }
 function listPane() {
   const r = studio.home, s = shopping(r), view = studio.mode === 'view';
   const rows = s.groups.map(g => `<div class="lrow" style="cursor:default">
       <span class="thumb" style="${g.p.photo ? `background-image:url(${assetSrc(g.p.photo)})` : `background-color:${g.p.color}`}"></span>
       <span class="tx"><b data-gname></b><small><span data-gshop></span>${g.n > 1 ? ` · ${g.n} ×` : ''}</small></span>
-      <span style="display:flex;flex-direction:column;align-items:flex-end;gap:2px">${g.p.price !== null ? `<span class="price">${euro(g.p.price * g.n)}</span>` : '<small class="note">—</small>'}${g.p.url ? `<a href="${esc(g.p.url)}" target="_blank" rel="noopener" style="font-size:12px">Shop ↗</a>` : ''}</span></div>`).join('');
+      <span style="display:flex;flex-direction:column;align-items:flex-end;gap:2px">${g.p.price !== null ? `<span class="price">${euro(g.p.price * g.n)}</span>` : priceOnSite(g.p.ref) ? '<small class="note">Price at the shop</small>' : '<small class="note">—</small>'}${shopLink(g.p.url, g.p.ref, "Shop ↗", " style=\"font-size:12px\"", "")}</span></div>`).join('');
   const papers = s.paperRows.map(x => `<div class="lrow" style="cursor:default"><span class="thumb" style="background-image:url(${blobSrc(x.img.src)})"></span>
       <span class="tx"><b data-pname></b><small>${x.plan.text}</small></span>
-      <span style="display:flex;flex-direction:column;align-items:flex-end;gap:2px">${x.plan.cost !== null ? `<span class="price">${euro(x.plan.cost)}</span>` : ''}${x.img.url ? `<a href="${esc(x.img.url)}" target="_blank" rel="noopener" style="font-size:12px">Shop ↗</a>` : ''}</span></div>`).join('');
+      <span style="display:flex;flex-direction:column;align-items:flex-end;gap:2px">${x.plan.cost !== null ? `<span class="price">${euro(x.plan.cost)}</span>` : priceOnSite(x.img.ref) ? '<small class="note">Price at the shop</small>' : ''}${shopLink(x.img.url, x.img.ref, "Shop ↗", " style=\"font-size:12px\"", "")}</span></div>`).join('');
   return `${view ? `<p class="note">Everything in this ${r.rooms.length > 1 ? 'home' : 'room'}, with the prices the shops listed when it was furnished. Tap a piece to see it.</p>` : r.rooms.length > 1 ? '<p class="note">Everything in every room of this home.</p>' : ''}
     <div class="sec-h">Furniture</div><div class="list">${rows || '<p class="note">No furniture yet.</p>'}</div>
+    ${s.floorRows.length ? `<div class="sec-h">Flooring</div><div class="list">${s.floorRows.map(x => `<div class="lrow" style="cursor:default"><span class="thumb" style="${x.fl.src ? `background-image:url(${blobSrc(x.fl.src)})` : `background-color:${x.fl.color}`}"></span>
+      <span class="tx"><b data-fname></b><small>${x.plan.text}</small></span>
+      <span style="display:flex;flex-direction:column;align-items:flex-end;gap:2px">${x.plan.cost !== null ? `<span class="price">${euro(x.plan.cost)}</span>` : priceOnSite(x.fl.ref) ? '<small class="note">Price at the shop</small>' : ''}${shopLink(x.fl.url, x.fl.ref, "Shop ↗", " style=\"font-size:12px\"", "")}</span></div>`).join('')}</div>` : ''}
     ${papers ? `<div class="sec-h">Wallpaper</div><div class="list">${papers}</div>` : ''}
     ${s.paintRows.length ? `<div class="sec-h">Paint</div><div class="list">${s.paintRows.map(x => `<div class="lrow" style="cursor:default"><span class="thumb" style="background-color:${x.paint.color || '#ddd'}"></span>
       <span class="tx"><b data-ptname></b><small>${x.plan.text}</small></span>
-      <span style="display:flex;flex-direction:column;align-items:flex-end;gap:2px">${x.plan.cost !== null ? `<span class="price">${euro(x.plan.cost)}</span>` : ''}${x.paint.url ? `<a href="${esc(x.paint.url)}" target="_blank" rel="noopener" style="font-size:12px">Shop ↗</a>` : ''}</span></div>`).join('')}</div>` : ''}
+      <span style="display:flex;flex-direction:column;align-items:flex-end;gap:2px">${x.plan.cost !== null ? `<span class="price">${euro(x.plan.cost)}</span>` : priceOnSite(x.paint.ref) ? '<small class="note">Price at the shop</small>' : ''}${shopLink(x.paint.url, x.paint.ref, "Shop ↗", " style=\"font-size:12px\"", "")}</span></div>`).join('')}</div>` : ''}
     ${s.mouldRows.length ? `<div class="sec-h">Mouldings</div><div class="list">${s.mouldRows.map(x => `<div class="lrow" style="cursor:default"><span class="thumb" style="display:grid;place-items:center">${profileSvg(x.m, '#d8c3a0')}</span>
       <span class="tx"><b data-mname></b><small>${mm(x.m.face)} × ${mm(x.m.depth)} mm · ${x.plan.text}</small></span>
-      <span style="display:flex;flex-direction:column;align-items:flex-end;gap:2px">${x.plan.cost !== null ? `<span class="price">${euro(x.plan.cost)}</span>` : ''}${x.m.url ? `<a href="${esc(x.m.url)}" target="_blank" rel="noopener" style="font-size:12px">Shop ↗</a>` : ''}</span></div>`).join('')}</div>` : ''}
+      <span style="display:flex;flex-direction:column;align-items:flex-end;gap:2px">${x.plan.cost !== null ? `<span class="price">${euro(x.plan.cost)}</span>` : priceOnSite(x.m.ref) ? '<small class="note">Price at the shop</small>' : ''}${shopLink(x.m.url, x.m.ref, "Shop ↗", " style=\"font-size:12px\"", "")}</span></div>`).join('')}</div>` : ''}
     <div class="total"><span>Total</span><span class="price">${euro(s.total)}</span></div>
-    <p class="note">${s.missing ? `${s.missing} product${s.missing === 1 ? ' has' : 's have'} no price listed. ` : ''}Generic pieces from Nido basics have no price.${papers ? ' Wallpaper includes 10 cm per strip to trim, rounded up to the pattern repeat.' : ''}</p>`;
+    <p class="note">${s.missing ? `${s.missing} product${s.missing === 1 ? ' has' : 's have'} no price listed. ` : ''}Generic pieces from Nido basics have no price.${s.onSite ? ` ${s.onSite} product${s.onSite === 1 ? ' shows its' : 's show their'} price only on the shop’s site, so the total leaves ${s.onSite === 1 ? 'it' : 'them'} out.` : ''}${papers ? ' Wallpaper includes 10 cm per strip to trim, rounded up to the pattern repeat.' : ''}</p>
+    ${(() => { const d = disclosureFor([...s.groups.map(g => g.p), ...s.floorRows.map(x => x.fl), ...s.paperRows.map(x => x.img), ...s.paintRows.map(x => x.paint), ...s.mouldRows.map(x => x.m)]); return d ? `<p class="note">${esc(d)}</p>` : ''; })()}`;
 }
 function fillListNames() {
   const s = shopping(studio.home), p = $('pane');
   p.querySelectorAll('[data-gname]').forEach((b, i) => { b.textContent = s.groups[i].p.name; });
   p.querySelectorAll('[data-gshop]').forEach((b, i) => { b.textContent = s.groups[i].p.shop || ''; });
+  p.querySelectorAll('[data-fname]').forEach((b, i) => { const fl = s.floorRows[i].fl; b.textContent = fl.name + (fl.shop ? ' · ' + fl.shop : ''); });
   p.querySelectorAll('[data-mname]').forEach((b, i) => { const m = s.mouldRows[i].m; b.textContent = m.name + (m.shop ? ' · ' + m.shop : ''); });
   p.querySelectorAll('[data-ptname]').forEach((b, i) => { const x = s.paintRows[i]; b.textContent = x.paint.name + (x.paint.code ? ' · ' + x.paint.code : '') + (x.paint.shop ? ' · ' + x.paint.shop : ''); });
   p.querySelectorAll('[data-pname]').forEach((b, i) => { b.textContent = s.paperRows[i].img.name + (s.paperRows[i].img.shop ? ' · ' + s.paperRows[i].img.shop : ''); });
@@ -913,10 +965,12 @@ function finishEditor(f, slot, title) {
   const tw = FIN_TYPES.map(([t, n]) => `<button type="button" data-act="ftype" data-slot="${slot}" data-v="${t}" aria-pressed="${f.type === t}">${n}</button>`).join('');
   let body = '';
   if (f.type === 'paint' || f.type === 'panel') {
-    const paints = allProducts().filter(p => p.kind === 'paint');
-    body = `${paints.length ? `<span class="note">Paint from shops</span><div class="swatches">${paints.map(p => `<button type="button" class="dot" data-act="fpaint" data-slot="${slot}" data-ref="${esc(p.ref)}" aria-pressed="${!!f.paint && f.paint.ref === p.ref}" title="${esc(p.name)}${p.paint && p.paint.code ? ' · ' + esc(p.paint.code) : ''} · ${esc(p.shop)}" aria-label="${esc(p.name)}" style="background:${p.color}"></button>`).join('')}</div>` : ''}
-      ${f.paint ? `<p class="note"><b data-fill="${fills.push(f.paint.name + (f.paint.shop ? ' · ' + f.paint.shop : '')) - 1}"></b>${f.paint.code ? ' · ' + esc(f.paint.code) : ''}${f.paint.price !== null ? ` · ${euro(f.paint.price)} per ${f.paint.tinL.toLocaleString()} L tin` : ''}${f.paint.url ? ` <a href="${esc(f.paint.url)}" target="_blank" rel="noopener">Shop ↗</a>` : ''}</p>` : ''}
-      <span class="note">${paints.length ? 'Or any colour' : 'Colour'}</span>${swatchRow('fcolor', f.color, slot)}${f.type === 'panel' ? numField('Board width', 'fsize', f.board, `data-slot="${slot}" min="3" max="60" step="1"`) : ''}`;
+    const all = allProducts().filter(p => p.kind === 'paint' && p.paint), paints = all.filter(p => !p.paint.mix), bases = all.filter(p => p.paint.mix), mixed = !!(f.paint && f.paint.mix);
+    body = `${paints.length ? `<span class="note">Paint from shops</span><div class="swatches">${paints.map(p => `<button type="button" class="dot" data-act="fpaint" data-slot="${slot}" data-ref="${esc(p.ref)}" aria-pressed="${!!f.paint && !mixed && f.paint.ref === p.ref}" title="${esc(p.name)}${p.paint.code ? ' · ' + esc(p.paint.code) : ''} · ${esc(p.shop)}" aria-label="${esc(p.name)}" style="background:${p.color}"></button>`).join('')}</div>` : ''}
+      ${bases.length ? `<label class="field"><span>Mixed in the shop, any colour</span><span class="in"><select data-act="fmix" data-slot="${slot}"><option value="">None</option>${bases.map(p => `<option value="${esc(p.ref)}" ${mixed && f.paint.ref === p.ref ? 'selected' : ''} data-fill="${fills.push(`${p.name} · ${p.shop}${p.price !== null ? ' · ' + euro(p.price) + ' per ' + p.paint.tinL.toLocaleString() + ' L' : ''}`) - 1}"></option>`).join('')}</select></span></label>` : ''}
+      ${mixed ? `<label class="field"><span>Colour code</span><span class="in"><input data-act="fcode" data-slot="${slot}" maxlength="40" value="${esc(f.paint.code)}" placeholder="NCS S 1005-Y20R, RAL 9010, or the tin’s code"></span></label>` : ''}
+      ${f.paint ? `<p class="note"><b data-fill="${fills.push(f.paint.name + (f.paint.shop ? ' · ' + f.paint.shop : '')) - 1}"></b>${f.paint.code ? ' · ' + esc(f.paint.code) : ''}${f.paint.price !== null ? ` · ${euro(f.paint.price)} per ${f.paint.tinL.toLocaleString()} L tin` : ''}${shopLink(f.paint.url, f.paint.ref, "Shop ↗", "", " ")}${mixed ? '. Copy the code from the fan deck or the tin; the shop mixes it. Pick below how it looks on screen.' : ''}</p>${linkDisclosure(f.paint.url, f.paint.ref)}` : ''}
+      <span class="note">${mixed ? 'How it looks on screen' : paints.length || bases.length ? 'Or any colour' : 'Colour'}</span>${swatchRow('fcolor', f.color, slot)}${f.type === 'panel' ? numField('Board width', 'fsize', f.board, `data-slot="${slot}" min="3" max="60" step="1"`) : ''}`;
   }
   if (f.type === 'pattern') body = `<span class="note">Background</span>${swatchRow('fcolor', f.color, slot)}
     <div class="fields two"><label class="field"><span>Pattern</span><span class="in"><select data-act="fpattern" data-slot="${slot}">${Object.entries(PATTERNS).map(([k, n]) => `<option value="${k}" ${k === f.pattern ? 'selected' : ''}>${n}</option>`).join('')}</select></span></label>
@@ -928,7 +982,7 @@ function finishEditor(f, slot, title) {
       <span class="note">Your images</span><div class="thumbs">${mine.map(m => `<button type="button" data-act="fmine" data-slot="${slot}" data-src="${esc(m.src)}" aria-pressed="${!!cur && cur.src === m.src && !cur.ref}" style="background-image:url(${blobSrc(m.src)})"></button>`).join('')}
         <label for="up-${slot}" title="Upload an image" aria-label="Upload an image" tabindex="0">+</label></div>
       <input type="file" id="up-${slot}" class="vh" accept="image/*" data-act="fupload" data-slot="${slot}">
-      ${cur ? `<p class="note"><b data-fill="${fills.push(cur.name + (cur.shop ? ' · ' + cur.shop : '')) - 1}"></b>${cur.mural ? '. A mural: one picture stretched to cover this part of the wall.' : `. One repeat is ${cur.width} cm wide.`}${cur.url ? ` <a href="${esc(cur.url)}" target="_blank" rel="noopener">Shop ↗</a>` : ''}</p>` : '<p class="note">Pick a paper, or upload a photo of a sample.</p>'}
+      ${cur ? `<p class="note"><b data-fill="${fills.push(cur.name + (cur.shop ? ' · ' + cur.shop : '')) - 1}"></b>${cur.mural ? '. A mural: one picture stretched to cover this part of the wall.' : `. One repeat is ${cur.width} cm wide.`}${shopLink(cur.url, cur.ref, "Shop ↗", "", " ")}</p>${linkDisclosure(cur.url, cur.ref)}` : '<p class="note">Pick a paper, or upload a photo of a sample.</p>'}
       ${cur && !cur.mural && !cur.ref ? numField('Repeat width', 'fsize', f.imgW, `data-slot="${slot}" min="5" max="400" step="1"`) : ''}`;
   }
   return `<div class="finish"><div class="fin-h">${title}</div><div class="types">${tw}</div>${body}</div>`;
@@ -944,7 +998,7 @@ function mouldPick(act, cur, label) {
   const plan = cur && mouldingPlan(studio.home.rooms, cur);
   return `<label class="field"><span>${label}</span><span class="in"><select data-act="${act}">${opts}</select></span></label>
     ${plan ? `<div>${plan.text}</div>${plan.cost !== null ? `<div class="price">${euro(plan.cost)}</div>` : ''}
-    <p class="note">Across the whole home: each frame side and rail stretch cut from ${cur.len.toLocaleString()} m strips, corners mitred, 5 mm lost a cut.${cur.url ? ` <a href="${esc(cur.url)}" target="_blank" rel="noopener">Shop ↗</a>` : ''}</p>` : ''}`;
+    <p class="note">Across the whole home: each frame side and rail stretch cut from ${cur.len.toLocaleString()} m strips, corners mitred, 5 mm lost a cut.${shopLink(cur.url, cur.ref, "Shop ↗", "", " ")}</p>${linkDisclosure(cur.url, cur.ref)}` : ''}`;
 }
 function wallsPane() {
   const r = studio.room, wid = studio.wall, cfg = r.walls[wid], split = cfg.layout === 'split', z = zoneOf(), part = split ? studio.part : 'lo';
@@ -1029,7 +1083,7 @@ function paintPlan(rooms, paint) {
     const blocks = r.openings.filter(o => o.wall === wid).map(o => ({ u0: o.off, u1: o.off + o.w, v0: o.kind === 'door' ? 0 : o.y, v1: (o.kind === 'door' ? 0 : o.y) + o.h }));
     const parts = cfg.layout === 'split' ? [['lo', 0, Math.min(cfg.split, r.h)], ['hi', Math.min(cfg.split, r.h), r.h]] : [['lo', 0, r.h]];
     for (const [key, z0, z1] of parts) {
-      const z = cfg[key], uses = (f) => f && (f.type === 'image' ? f.base : (f.type === 'paint' || f.type === 'panel') && f.paint) && (f.type === 'image' ? f.base : f.paint).ref === paint.ref;
+      const z = cfg[key], uses = (f) => f && (f.type === 'image' ? f.base : (f.type === 'paint' || f.type === 'panel') && f.paint) && paintKey(f.type === 'image' ? f.base : f.paint) === paintKey(paint);
       if (uses(z.f)) area += wallPartArea(r, wid, z0, z1);
       if (z.frames && z.style !== 'soft' && uses(z.inner)) {
         const [v0, v1] = frameSpan(cfg, key, r.h);
@@ -1057,10 +1111,10 @@ function baseNote(z) {
   const f = finOf(z, slot), b = f.base;
   const box = `<label class="check"><input type="checkbox" data-act="fbase" data-slot="${slot}" ${b ? 'checked' : ''}><span>Paint the wall before papering</span></label>`;
   if (!b) return `<div class="finish">${box}</div>`;
-  const paints = allProducts().filter(p => p.kind === 'paint'), plan = paintPlan(studio.home.rooms, b), own = b.ref !== 'base:any';
+  const paints = allProducts().filter(p => p.kind === 'paint' && !(p.paint && p.paint.mix)), plan = paintPlan(studio.home.rooms, b), own = b.ref !== 'base:any';
   return `<div class="finish">${box}
     ${paints.length ? `<span class="note">Paint from shops</span><div class="swatches">${paints.map(p => `<button type="button" class="dot" data-act="fbasepaint" data-slot="${slot}" data-ref="${esc(p.ref)}" aria-pressed="${b.ref === p.ref}" title="${esc(p.name)}${p.paint && p.paint.code ? ' · ' + esc(p.paint.code) : ''} · ${esc(p.shop)}" aria-label="${esc(p.name)}" style="background:${p.color}"></button>`).join('')}</div>` : ''}
-    ${own ? `<p class="note"><b data-fill="${fills.push(b.name + (b.shop ? ' · ' + b.shop : '')) - 1}"></b>${b.code ? ' · ' + esc(b.code) : ''}${b.price !== null ? ` · ${euro(b.price)} per ${b.tinL.toLocaleString()} L tin` : ''}${b.url ? ` <a href="${esc(b.url)}" target="_blank" rel="noopener">Shop ↗</a>` : ''}</p>` : ''}
+    ${own ? `<p class="note"><b data-fill="${fills.push(b.name + (b.shop ? ' · ' + b.shop : '')) - 1}"></b>${b.code ? ' · ' + esc(b.code) : ''}${b.price !== null ? ` · ${euro(b.price)} per ${b.tinL.toLocaleString()} L tin` : ''}${shopLink(b.url, b.ref, "Shop ↗", "", " ")}</p>${linkDisclosure(b.url, b.ref)}` : ''}
     ${numField('Coats', 'fbasecoats', b.coats, `data-slot="${slot}" min="1" max="4" step="1"`, '')}
     <div>${plan.text}</div>${plan.cost !== null ? `<div class="price">${euro(plan.cost)}</div>` : ''}
     <p class="note">Across the whole home, on every wall papered with this base, windows and doors left out. ${own ? 'Coverage and tin size from the shop; tap the paint again for any paint.' : `Any paint: 10 m² a litre and 4 L tins assumed${paints.length ? '; pick a shop’s paint for its own coverage and price' : ''}.`}</p></div>`;
@@ -1070,6 +1124,41 @@ function paperNote(z) {
   if (!img) return '';
   const plan = paperPlan(studio.home.rooms, img);
   return `<div class="finish"><div class="fin-h">How much paper</div><div>${plan.text}</div>${plan.cost !== null ? `<div class="price">${euro(plan.cost)}</div>` : ''}<p class="note">Across the whole home. ${img.ref ? 'Roll size from the shop.' : 'For your own image, rolls of 53 cm × 10.05 m are assumed.'}</p></div>`;
+}
+
+/* ---------- Flooring from shops ---------- */
+/* A shop's flooring as a room keeps it (cleanFlooring), keeping the room's extra for cuts when it swaps one floor for another. */
+function shopFlooring(p, prev) {
+  const f = p.flooring;
+  return cleanFlooring({ ref: p.ref, name: p.name, shop: p.shop, url: p.url, price: p.price, color: p.color, src: f.tile ? '/_blob/' + f.tile : null,
+    aspect: f.aspect, width: f.width, pack: f.pack, surface: f.surface, extra: prev ? prev.extra : 10 });
+}
+/* Every room laid with this flooring: its floor area plus that room's extra for cuts, in whole packs, or in m² to a tenth when it has no pack. */
+function floorPlan(rooms, fl) {
+  let area = 0, need = 0;
+  const extras = new Set();
+  for (const r of rooms) if (r.flooring && r.flooring.ref === fl.ref) { const a = r.w * r.l; area += a; need += a * (1 + r.flooring.extra / 100); extras.add(r.flooring.extra); }
+  const fmt = (v) => v.toLocaleString(undefined, { maximumFractionDigits: 2 }), ex = [...extras];
+  const tail = ex.length > 1 ? ' + extra for cuts' : ex[0] ? ` + ${ex[0]}% for cuts` : '';
+  if (fl.pack) {
+    const packs = area > 0.01 ? Math.ceil(need / fl.pack - 1e-6) : 0;
+    return { area, packs, cost: fl.price !== null ? packs * fl.price : null, text: `${packs} pack${packs === 1 ? '' : 's'} of ${fmt(fl.pack)} m² · ${fmt(area)} m² of floor${tail}` };
+  }
+  const m2 = Math.ceil(need * 10 - 1e-6) / 10;
+  return { area, m2, cost: fl.price !== null ? m2 * fl.price : null, text: `${fmt(m2)} m² · ${fmt(area)} m² of floor${tail}` };
+}
+/* Under the built-in floors: the shops' flooring to pick from, and for the one laid here, what the whole home needs. */
+function floorNote(r) {
+  const fl = r.flooring, list = allProducts().filter(p => p.kind === 'flooring' && p.flooring), many = studio.home.rooms.length > 1;
+  const pick = list.length ? `<span class="note">Flooring from shops</span><div class="thumbs">${list.map(p => `<button type="button" data-act="flooring" data-ref="${esc(p.ref)}" aria-pressed="${!!fl && fl.ref === p.ref}" title="${esc(p.name)} · ${esc(p.shop)}" aria-label="${esc(p.name)}" style="${p.flooring.tile ? `background-image:url(${assetSrc(p.flooring.tile)})` : `background:${p.color}`}"></button>`).join('')}</div>` : '';
+  if (!fl) return pick;
+  const plan = floorPlan(studio.home.rooms, fl);
+  return `${pick}<div class="finish"><div class="fin-h">How much flooring</div>
+    <p class="note"><b data-fill="${fills.push(fl.name + (fl.shop ? ' · ' + fl.shop : '')) - 1}"></b>${fl.price !== null ? ` · ${euro(fl.price)} per ${fl.pack ? `pack of ${fl.pack.toLocaleString()} m²` : 'm²'}` : ''}${shopLink(fl.url, fl.ref, "Shop ↗", "", " ")}</p>${linkDisclosure(fl.url, fl.ref)}
+    ${numField('Extra for cuts', 'floorextra', fl.extra, 'min="0" max="50" step="1"', '%')}
+    <div>${plan.text}</div>${plan.cost !== null ? `<div class="price">${euro(plan.cost)}</div>` : ''}
+    <p class="note">Across the whole home${many ? ', in every room with this floor' : ''}. ${fl.pack ? 'Pack size from the shop.' : 'Sold by the m².'}${SURFACE_LOOK[fl.surface][2] ? ' Laying it diagonally or in herringbone? Add 15% or more.' : ''}</p>
+    ${many ? '<button type="button" class="btn small" data-act="floorall">Use this floor in every room</button>' : ''}</div>`;
 }
 function spreadPanels(wid, count, key, opt) {
   const cfg = studio.room.walls[wid], [v0, v1] = frameSpan(cfg, key, H);
@@ -1161,7 +1250,10 @@ async function paneEvent(e) {
     for (const it of r.items) { const c = clampItem(r, it); it.x = c.x; it.z = c.z; }
     changed(true); layoutStudio(); resetView(); renderStudio(); return;
   }
-  if (act === 'floor') { r.floor = t.dataset.v; changed(true); rerender(); return; }
+  if (act === 'floor') { r.floor = t.dataset.v; r.flooring = null; changed(true); rerender(); return; }
+  if (act === 'flooring') { const p = allProducts().find(x => x.ref === t.dataset.ref); if (p && p.flooring) { r.flooring = shopFlooring(p, r.flooring); changed(true); rerender(); } return; }
+  if (act === 'floorextra' && type === 'change' && r.flooring) { const v = +t.value; if (v >= 0 && v <= 50) r.flooring.extra = v; changed(true); rerender(); return; }
+  if (act === 'floorall' && r.flooring) { for (const x of studio.home.rooms) x.flooring = { ...r.flooring }; changed(true); rerender(); toast('Every room has this floor now.'); return; }
   if (act === 'opadd') {
     const k = t.dataset.v, wall = k === 'door' ? 'front' : 'back', len = wall === 'back' || wall === 'front' ? r.w : r.l;
     const d = { window: { w: 1.2, h: 1.3, y: 0.9 }, door: { w: 0.82, h: 2.03, y: 0 }, radiator: { w: 0.8, h: 0.6, y: 0.12 } }[k];
@@ -1249,7 +1341,17 @@ async function paneEvent(e) {
     }
     changed(true); rerender(); return;
   }
-  if (act === 'fcolor') { const h = hexVal(); if (!h) return; f.color = h; f.paint = null; changed(true); if (type !== 'input') rerender(); return; }
+  if (act === 'fcolor') {                 // any colour drops a shop's ready-made paint; a mixed one keeps its base and code
+    const h = hexVal(); if (!h) return; f.color = h;
+    if (f.paint && f.paint.mix) f.paint.color = h; else f.paint = null;
+    changed(true); if (type !== 'input') rerender(); return;
+  }
+  if (act === 'fmix' && type === 'change') {
+    const p = allProducts().find(x => x.ref === t.value && x.kind === 'paint' && x.paint && x.paint.mix);
+    f.paint = p ? cleanPaint({ ref: p.ref, name: p.name, shop: p.shop, url: p.url, price: p.price, ...p.paint, mix: true, color: f.color, code: f.paint && f.paint.mix ? f.paint.code : '' }) : null;
+    changed(true); rerender(); if (p) { const c = $('pane').querySelector(`[data-act="fcode"][data-slot="${t.dataset.slot}"]`); if (c && !c.value) c.focus(); } return;
+  }
+  if (act === 'fcode' && type === 'change' && f.paint && f.paint.mix) { f.paint.code = t.value.trim().slice(0, 40); changed(true); rerender(); return; }
   if (act === 'fpaint') {
     const p = allProducts().find(x => x.ref === t.dataset.ref); if (!p) return;
     f.color = p.color; f.paint = cleanPaint({ ref: p.ref, name: p.name, shop: p.shop, url: p.url, price: p.price, color: p.color, ...(p.paint || {}) });
@@ -1305,6 +1407,7 @@ function pickFurnitureDialog() {
     g.innerHTML = list.map((p, i) => productCard(p, `<button type="button" class="btn small primary" data-add="${esc(p.ref)}">Add</button>`, i)).join('') || '<p class="note">No products match.</p>';
     [...g.querySelectorAll('.card')].forEach((c, i) => { c.querySelector('[data-name]').textContent = list[i].name; c.querySelector('[data-shop]').textContent = list[i].shop; });
     wirePreviews(g, list);
+    gridDisclosure(g, list);
     for (const b of $('dlg-box').querySelectorAll('[data-pk]')) b.setAttribute('aria-pressed', b.dataset.pk === kind);
   };
   const box = openDialog(`<div class="dlg-h"><h2 id="dlg-title">Add furniture</h2><button type="button" class="btn small" data-close>Done</button></div>
@@ -1443,7 +1546,7 @@ function renderProps() {
     ${p.photo ? `<img alt="" src="${assetSrc(p.photo)}" style="border-radius:10px;aspect-ratio:4/3;object-fit:cover;width:100%;background:var(--surface-2)" onerror="this.remove()">` : ''}
     ${p.ref.startsWith('shop:') && (allProducts().find(x => x.ref === p.ref) || {}).curated ? '<p class="note">Copied from the shop’s website by Nido. Check the link for today’s price.</p>' : ''}
     <dl class="kv"><dt>Shop</dt><dd id="pr-shop"></dd><dt>Size</dt><dd class="num">${cm(p.w)} × ${cm(p.d)} × ${cm(p.h)} cm</dd>${p.price !== null ? `<dt>Price</dt><dd class="price">${euro(p.price)}</dd>` : ''}</dl>
-    ${p.url ? `<a class="btn small" href="${esc(p.url)}" target="_blank" rel="noopener">See it in the shop ↗</a>` : ''}
+    ${shopLink(p.url, p.ref, "See it in the shop ↗", " class=\"btn small\"", "")}${linkDisclosure(p.url, p.ref)}
     ${canSize ? `<div class="fields">${numField('Width', 'pw', cm(p.w), 'data-k="w" min="5" max="800"')}${numField('Depth', 'pw', cm(p.d), 'data-k="d" min="5" max="800"')}${numField('Height', 'pw', cm(p.h), 'data-k="h" min="1" max="400"')}</div>
       <div class="swatches">${PRESETS.map(([n, c]) => `<button type="button" class="dot" data-pr="color" data-v="${c}" title="${n}" aria-label="${n}" aria-pressed="${p.color === c}" style="background:${c}"></button>`).join('')}<label class="in" style="width:44px"><input type="color" data-pr="colorpick" value="${p.color}" aria-label="Any colour" style="height:26px;padding:2px;border:0"></label></div>` : ''}
     ${edit ? `<div style="display:flex;gap:6px;flex-wrap:wrap"><button type="button" class="btn small" data-pr="rot">Rotate 90°</button><button type="button" class="btn small" data-pr="dup">Duplicate</button><button type="button" class="btn small danger" data-pr="del">Remove</button></div>` : ''}`;

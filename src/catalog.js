@@ -32,7 +32,7 @@ function specOf(p, key, unit, fallback) {
 const dimSpecs = (h = 'Height') => [{ key: 'width', label: 'Width', unit: 'cm', need: true }, { key: 'depth', label: 'Depth', unit: 'cm', need: true }, { key: 'height', label: h, unit: 'cm', need: true }];
 const FURNITURE_VIEW = (p) => ({ w: num(specOf(p, 'width', 'm', 0.6), 0.05, 8, 0.6), d: num(specOf(p, 'depth', 'm', 0.6), 0.05, 8, 0.6), h: num(specOf(p, 'height', 'm', 0.6), 0.004, 4, 0.6) });
 
-/* Every type of product. group: furniture is placed in rooms, wall goes on walls. sold: units it can be sold by (first is the default).
+/* Every type of product. group: furniture is placed in rooms, wall goes on walls, floor is laid in a room. sold: units it can be sold by (first is the default).
    view(p, perUnit): what the app needs from it; perUnit(u) gives the price for one u (or null). */
 const TYPES = {
   ...Object.fromEntries(Object.entries(KINDS).map(([k, label]) => [k, { label, group: 'furniture', sold: ['piece'], specs: dimSpecs(k === 'rug' ? 'Thickness' : 'Height'), view: (p, per) => ({ ...FURNITURE_VIEW(p), price: per('piece') }) }])),
@@ -46,12 +46,13 @@ const TYPES = {
     } },
   paint: { label: 'Paint', group: 'wall', sold: ['tin', 'L'],
     specs: [{ key: 'tin', label: 'Tin size', unit: 'L', need: true }, { key: 'coverage', label: 'Covers', unit: 'm2/L', need: true }, { key: 'coats', label: 'Coats', unit: '' },
-      { key: 'code', label: 'Colour code', unit: '' }, { key: 'finish', label: 'Finish', unit: '' }],
+      { key: 'code', label: 'Colour code', unit: '' }, { key: 'finish', label: 'Finish', unit: '' },
+      { key: 'mix', label: 'Colours', options: { no: 'One colour', yes: 'Any colour, mixed in the shop' } }],
     view: (p, per) => {
       const tinL = num(specOf(p, 'tin', 'L', 4), 0.1, 30, 4), perL = per('L');
       return { price: per('tin') ?? (perL !== null ? perL * tinL : null),
         paint: { tinL, coverage: num(specOf(p, 'coverage', 'm2/L', 10), 2, 25, 10), coats: num(Math.round(specOf(p, 'coats', '', 2)), 1, 4, 2),
-          code: str(String(specOf(p, 'code', undefined, '')), 40), finish: str(String(specOf(p, 'finish', undefined, '')), 30) } };
+          code: str(String(specOf(p, 'code', undefined, '')), 40), finish: str(String(specOf(p, 'finish', undefined, '')), 30), mix: specOf(p, 'mix') === 'yes' } };
     } },
   moulding: { label: 'Moulding', group: 'wall', sold: ['strip', 'm'],
     specs: [{ key: 'width', label: 'Face width', unit: 'mm', need: true }, { key: 'thickness', label: 'Thickness', unit: 'mm', need: true }, { key: 'length', label: 'Strip length', unit: 'm', need: true },
@@ -60,6 +61,16 @@ const TYPES = {
       const len = specOf(p, 'length', 'm', 2.4), perM = per('m');
       return { price: per('strip') ?? (perM !== null ? perM * len : null),
         moulding: mouldSize({ face: specOf(p, 'width', 'm', 0.02), depth: specOf(p, 'thickness', 'm', 0.01), len, shape: specOf(p, 'shape') }) };
+    } },
+  /* Laminate, parquet, tiles, vinyl, carpet. The picture is a straight-down photo cut so it tiles; "repeat" is the width of floor it shows.
+     With a pack size it's bought in whole packs (priced per pack); without, by the m². */
+  flooring: { label: 'Flooring', group: 'floor', sold: ['pack', 'm2'],
+    specs: [{ key: 'pack', label: 'One pack covers', unit: 'm2' }, { key: 'repeat', label: 'Width the picture shows', unit: 'cm', need: true },
+      { key: 'surface', label: 'Surface', options: FLOOR_SURFACES }],
+    view: (p, per) => {
+      const pack = num(specOf(p, 'pack', 'm2', null), 0.05, 100, null), perM2 = per('m2'), s = specOf(p, 'surface');
+      return { price: pack ? per('pack') ?? (perM2 !== null ? perM2 * pack : null) : perM2,
+        flooring: { tile: p.image, aspect: p.imageAspect, width: num(specOf(p, 'repeat', 'cm', 100), 10, 1000, 100), pack, unit: pack ? 'pack' : 'm2', surface: FLOOR_SURFACES[s] ? s : 'wood' } };
     } },
 };
 
@@ -83,6 +94,32 @@ function cleanOffer(o) {
   if (!o || typeof o !== 'object' || !/^[\w-]{1,40}$/.test(o.productId || '')) return null;
   return { id: /^[\w-]{1,40}$/.test(o.id || '') ? o.id : newId('o'), productId: o.productId, url: safeUrl(o.url), sku: str(o.sku, 40),
     price: num(o.price, 0, 1e6, null), currency: CURRENCIES[o.currency] ? o.currency : null, unit: UNITS[o.unit] ? o.unit : null };
+}
+/* Affiliate tracking Nido adds to a vendor's links (docs/CATALOG.md): wrap the link in a network's deep link
+   (Awin, CJ, Impact, Tradedoubler: a template with {url}), or add a parameter (Amazon: tag=yourtag-21). */
+const LINK = /^https:\/\/[^\s"'<>]+$/;
+function cleanAffiliate(a) {
+  if (!a || typeof a !== 'object') return null;
+  const disclosure = str(a.disclosure, 300);
+  if (a.mode === 'wrap' && typeof a.template === 'string' && LINK.test(a.template) && a.template.includes('{url}') && a.template.length <= 400) return { mode: 'wrap', template: a.template, disclosure };
+  if (a.mode === 'param' && /^[\w-]{1,30}$/.test(a.param || '') && /^[\w.-]{1,60}$/.test(a.value || '')) return { mode: 'param', param: a.param, value: a.value, disclosure };
+  return null;
+}
+function affiliateUrl(v, url) {
+  const a = v && v.affiliate;
+  if (!url || !a) return url;
+  let out = url;
+  if (a.mode === 'wrap') out = a.template.split('{url}').join(encodeURIComponent(url));
+  else { try { const u = new URL(url); u.searchParams.set(a.param, a.value); out = u.toString(); } catch (e) { return url; } }
+  return LINK.test(out) ? out : url;
+}
+/* Where a "Shop" link really goes. Rooms keep the plain link; the vendor's tracking is added when the link is drawn,
+   so a new affiliate ID reaches every room already made. ref is a product's "shop:<vendor>:<product>". */
+const vendorOf = (ref) => (typeof ref === 'string' && ref.startsWith('shop:') ? S.shops.get(ref.split(':')[1]) || null : null);
+const priceOnSite = (ref) => !!(vendorOf(ref) || {}).priceOnSite;
+function buyLink(url, ref) {
+  const v = vendorOf(ref), href = affiliateUrl(v, url);
+  return { href, sponsored: !!href && href !== url, vendor: v };
 }
 const cleanLocation = (l) => (l && typeof l === 'object' && (l.name || l.address) ? { name: str(l.name, 60), address: str(l.address, 160), map: safeUrl(l.map) } : null);
 
@@ -110,7 +147,8 @@ function cleanVendor(s, id) {
     products = old.map(x => x.product); offers = old.map(x => x.offer);
   }
   return { id, name: str(s.name, 60, 'Shop'), url: safeUrl(s.url), about: str(s.about, 400), logo: ASSET.test(s.logo || '') ? s.logo : null, curated: !!s.curated,
-    locations: (Array.isArray(s.locations) ? s.locations.slice(0, 20) : []).map(cleanLocation).filter(Boolean), products, offers, updatedAt: num(s.updatedAt, 0, 1e14, 0) };
+    locations: (Array.isArray(s.locations) ? s.locations.slice(0, 20) : []).map(cleanLocation).filter(Boolean), products, offers, updatedAt: num(s.updatedAt, 0, 1e14, 0),
+    affiliate: cleanAffiliate(s.affiliate), priceOnSite: !!s.priceOnSite };     // priceOnSite: the shop's rules keep prices on its own site (Amazon)
 }
 const cleanShop = cleanVendor;
 
@@ -131,8 +169,8 @@ function priceOf(p, o, unit) {
 /* One product at one offer, in the shape rooms, walls and the shopping list use (and copy into homes). */
 function productView(v, p, o) {
   const T = TYPES[p.type], per = (u) => priceOf(p, o, u), out = T.view(p, per);
-  return { ref: `shop:${v.id}:${p.id}`, id: p.id, kind: p.type, name: p.name, about: p.about, material: p.material, color: p.color, photo: p.type === 'wallpaper' || p.type === 'paint' ? null : p.image,
-    image: p.image, model: p.model, w: 0.6, d: 0.6, h: 0.6, ...out, price: out.price ?? null, currency: (o && o.currency) || p.currency,
+  return { ref: `shop:${v.id}:${p.id}`, id: p.id, kind: p.type, name: p.name, about: p.about, material: p.material, color: p.color, photo: p.type === 'wallpaper' || p.type === 'paint' || p.type === 'flooring' ? null : p.image,
+    image: p.image, model: p.model, w: 0.6, d: 0.6, h: 0.6, ...out, price: v.priceOnSite ? null : out.price ?? null, priceOnSite: v.priceOnSite, currency: (o && o.currency) || p.currency,
     url: (o && o.url) || null, sku: (o && o.sku) || '', shop: v.name, shopId: v.id, shopUrl: v.url, curated: v.curated, editable: false };
 }
 /* Every product anyone can use: Nido's basics, then each vendor's offers. */
@@ -151,7 +189,7 @@ const myShop = () => S.shops.get(S.uid) || null;
 const editableVendors = () => [...S.shops.values()].filter(v => v.id === S.uid || S.isAdmin);
 async function saveVendor(v) {
   const body = JSON.parse(JSON.stringify({ name: v.name, url: v.url, about: v.about, logo: v.logo, curated: !!v.curated && S.isAdmin, locations: v.locations,
-    products: v.products, offers: v.offers, updatedAt: Date.now() }));
+    products: v.products, offers: v.offers, affiliate: v.affiliate || null, priceOnSite: !!v.priceOnSite, updatedAt: Date.now() }));
   await S.db.doc('shops/' + (v.id || S.uid)).set(body);
 }
 const saveShop = saveVendor;

@@ -252,10 +252,14 @@ function buildOneRoom(r) {
   const g = new THREE.Group();
   g.position.set(r.x || 0, 0, r.z || 0);
   g.userData.roomGroup = r.id;
-  const ft = floorTexture(r.floor || 'oak');
-  const floorMat = own(new THREE.MeshPhysicalMaterial({ map: ft, bumpMap: ft, bumpScale: 1.2, roughness: r.floor === 'carpet' ? 1 : 0.6, clearcoat: r.floor === 'carpet' ? 0 : 0.2, clearcoatRoughness: 0.4 }));
+  /* A shop's flooring: its photo, one repeat as wide as the shop says (or its colour, with no photo). Otherwise a built-in floor, 2 m a repeat. */
+  const fl = r.flooring, [rough, coat] = fl ? SURFACE_LOOK[fl.surface] : r.floor === 'carpet' ? [1, 0] : [0.6, 0.2];
+  const ft = fl ? (fl.src ? imageTexture(fl.src) : null) : floorTexture(r.floor || 'oak');
+  const floorMat = own(new THREE.MeshPhysicalMaterial({ color: fl && !fl.src ? fl.color : 0xffffff, map: ft, bumpMap: fl ? null : ft, bumpScale: 1.2,
+    roughness: rough, clearcoat: coat, clearcoatRoughness: 0.4 }));
+  const tw = fl ? fl.width / 100 : 2, th = fl ? fl.width / 100 * fl.aspect : 2;
   const fgeo = new THREE.PlaneGeometry(W, L), fuv = fgeo.attributes.uv, fpos = fgeo.attributes.position;
-  for (let i = 0; i < fuv.count; i++) fuv.setXY(i, (fpos.getX(i) + (r.x || 0)) / 2, (fpos.getY(i) - (r.z || 0)) / 2);   // planks run on across rooms
+  for (let i = 0; i < fuv.count; i++) fuv.setXY(i, (fpos.getX(i) + (r.x || 0)) / tw, (fpos.getY(i) - (r.z || 0)) / th);   // planks run on across rooms
   const floor = new THREE.Mesh(fgeo, floorMat);
   floor.rotation.x = -Math.PI / 2; floor.receiveShadow = true; floor.userData.floor = r.id;
   g.add(floor);

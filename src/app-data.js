@@ -31,8 +31,11 @@ function defaultFinish(over) {
 function cleanPaint(m) {
   if (!m || typeof m !== 'object' || typeof m.ref !== 'string' || !m.ref) return null;
   return { ref: str(m.ref, 140), name: str(m.name, 80, 'Paint'), shop: str(m.shop, 60), url: safeUrl(m.url), price: num(m.price, 0, 100000, null),
-    color: HEX.test(m.color || '') ? m.color : null, code: str(m.code, 40), tinL: num(m.tinL, 0.1, 30, 4), coverage: num(m.coverage, 2, 25, 10), coats: num(m.coats, 1, 4, 2) };
+    color: HEX.test(m.color || '') ? m.color : null, code: str(m.code, 40), tinL: num(m.tinL, 0.1, 30, 4), coverage: num(m.coverage, 2, 25, 10), coats: num(m.coats, 1, 4, 2),
+    mix: !!m.mix };                       // mixed to order: a shop's base paint tinted to the code the person typed
 }
+/* Paints that are the same purchase: the same product, and for a mixed one the same colour code. */
+const paintKey = (m) => m.ref + (m.mix ? '|' + String(m.code || '').trim().toLowerCase() : '');
 const defaultZone = (over) => ({ f: defaultFinish(), frames: false, style: 'mould', inner: null, mould: null, panelW: 0.7, panels: null, gap: null, panelH: null, moulding: null, ...over });
 const defaultWall = () => ({ layout: 'whole', split: 1.0, rail: true, trim: null, railStyle: 'straight', railSize: 0.09, railM: null, lo: defaultZone(), hi: defaultZone() });
 function cleanImg(m) {
@@ -69,9 +72,20 @@ function cleanWall(w) {
 }
 
 /* ---------- Products ---------- */
-/* What goes on the walls rather than in the room, sold by the roll, the tin or the strip. */
-const MATERIALS = { wallpaper: 'Wallpaper', paint: 'Paint', moulding: 'Moulding' };
+/* What goes on walls and floors rather than in the room, sold by the roll, the tin, the strip or the pack. */
+const MATERIALS = { wallpaper: 'Wallpaper', paint: 'Paint', moulding: 'Moulding', flooring: 'Flooring' };
 const MOULD_SHAPES = { flat: 'Flat strip', half: 'Half round', profiled: 'Profiled', corner: 'Corner' };
+const FLOOR_SURFACES = { wood: 'Wood or laminate', tile: 'Tiles or stone', vinyl: 'Vinyl, linoleum or cork', cement: 'Microcement, concrete or resin', carpet: 'Carpet' };
+/* How each surface takes the light (roughness, clearcoat), and whether it's laid in pieces (planks, tiles) so the way it's laid changes the waste. */
+const SURFACE_LOOK = { wood: [0.6, 0.2, true], tile: [0.35, 0.45, true], vinyl: [0.55, 0.12, true], cement: [0.7, 0.15, false], carpet: [1, 0, false] };
+/* A shop's flooring laid in a room: its picture and the width it shows, how much a pack covers, the price (per pack, or per m² when
+   there's no pack), and the room's own extra for cuts. Enough to draw it and count packs. */
+function cleanFlooring(m) {
+  if (!m || typeof m !== 'object' || typeof m.ref !== 'string' || !m.ref) return null;
+  return { ref: str(m.ref, 140), name: str(m.name, 80, 'Flooring'), shop: str(m.shop, 60), url: safeUrl(m.url), price: num(m.price, 0, 100000, null),
+    src: BLOB.test(m.src || '') ? m.src : null, aspect: num(m.aspect, 0.05, 20, 1), width: num(m.width, 10, 1000, 100), color: HEX.test(m.color || '') ? m.color : '#c8b49a',
+    pack: num(m.pack, 0.05, 100, null), surface: FLOOR_SURFACES[m.surface] ? m.surface : 'wood', extra: num(m.extra, 0, 50, 10) };
+}
 const mouldSize = (m) => ({ face: num(m.face, 0.003, 0.3, 0.02), depth: num(m.depth, 0.002, 0.1, 0.01), len: num(m.len, 0.3, 6, 2.4), shape: MOULD_SHAPES[m.shape] ? m.shape : 'flat' });
 /* A shop's moulding chosen for panel frames or a rail: its size, strip length and price, enough to draw it and count strips. */
 function cleanMoulding(m) {
@@ -106,7 +120,7 @@ const OP_KINDS = { window: 'Window', door: 'Door', radiator: 'Radiator' };
 function cleanRoom(src) {
   src = src && typeof src === 'object' ? src : {};
   const r = { id: /^[\w-]{1,40}$/.test(src.id || '') ? src.id : newId('room'), x: num(src.x, -80, 80, 0), z: num(src.z, -80, 80, 0), name: str(src.name, 60, 'Untitled room'), notes: str(src.notes, 600), w: num(src.w, 1, 15, 3.5), l: num(src.l, 1, 15, 4), h: num(src.h, 2, 5, 2.5),
-    floor: FLOORS[src.floor] ? src.floor : 'oak', evening: !!src.evening, openings: [], walls: {}, items: [],
+    floor: FLOORS[src.floor] ? src.floor : 'oak', flooring: cleanFlooring(src.flooring), evening: !!src.evening, openings: [], walls: {}, items: [],
     updatedAt: num(src.updatedAt, 0, 1e14, 0), published: !!src.published, cover: ASSET.test(src.cover || '') ? src.cover : null,
     from: src.from && typeof src.from === 'object' ? { owner: str(src.from.owner, 80), id: str(src.from.id, 60), name: str(src.from.name, 60) } : null };
   for (const o of Array.isArray(src.openings) ? src.openings.slice(0, 30) : []) {

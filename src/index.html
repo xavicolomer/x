@@ -248,7 +248,7 @@ h2 { margin: 0; font-family: var(--font-display); font-size: 19px; font-weight: 
     <div class="head">
       <div>
         <h1>Catalogue</h1>
-        <p>Furniture, rugs and wallpaper from shops on Nido, with their real sizes. Place any of them in your rooms; the shopping list adds up the prices and links back to the shop.</p>
+        <p>Furniture, flooring, wallpaper and paint from shops on Nido, with their real sizes. Place any of them in your rooms; the shopping list adds up the prices and links back to the shop.</p>
       </div>
     </div>
     <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
@@ -262,7 +262,7 @@ h2 { margin: 0; font-family: var(--font-display); font-size: 19px; font-weight: 
     <div class="head">
       <div>
         <h1>For shops</h1>
-        <p id="shop-intro">List your products with their specs, a photo, a price and a link to buy. Furniture goes into people's rooms at its real size; wallpaper, paint and mouldings go on their walls, with the rolls, tins or strips they need worked out for them.</p>
+        <p id="shop-intro">List your products with their specs, a photo, a price and a link to buy. Furniture goes into people's rooms at its real size; flooring goes on their floors and wallpaper, paint and mouldings on their walls, with the packs, rolls, tins or strips they need worked out for them.</p>
       </div>
     </div>
     <div class="split2">
@@ -276,6 +276,14 @@ h2 { margin: 0; font-family: var(--font-display); font-size: 19px; font-weight: 
         <div class="sec-h">Shops to visit</div>
         <div id="shop-locs" style="display:flex;flex-direction:column;gap:10px"></div>
         <div><button type="button" class="btn small" id="loc-add">Add a shop to visit</button></div>
+        <div id="aff-box" hidden style="display:flex;flex-direction:column;gap:10px">
+          <div class="sec-h">Affiliate links · Nido admins</div>
+          <label class="field" for="aff-mode"><span>Tracking</span><span class="in"><select id="aff-mode"><option value="">None</option><option value="wrap">Wrap each link (Awin, CJ, Impact, Tradedoubler)</option><option value="param">Add a parameter (Amazon)</option></select></span></label>
+          <label class="field" for="aff-template" id="aff-template-row"><span>Deep link, with {url} where the product's link goes</span><span class="in"><input id="aff-template" maxlength="400" spellcheck="false" placeholder="https://www.awin1.com/cread.php?awinmid=…&amp;awinaffid=…&amp;ued={url}"></span></label>
+          <div class="fields two" id="aff-param-row"><label class="field" for="aff-param"><span>Parameter</span><span class="in"><input id="aff-param" maxlength="30" spellcheck="false" placeholder="tag"></span></label><label class="field" for="aff-value"><span>Value</span><span class="in"><input id="aff-value" maxlength="60" spellcheck="false" placeholder="yourtag-21"></span></label></div>
+          <label class="field" for="aff-disclosure"><span>Disclosure shown with these links</span><span class="in"><input id="aff-disclosure" maxlength="300" placeholder="Some shop links earn Nido a commission, at no extra cost to you."></span></label>
+          <label class="check" for="aff-onsite"><input type="checkbox" id="aff-onsite"><span>Prices stay on the shop's own site (Amazon's rules); the shopping list leaves them out</span></label>
+        </div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button class="btn primary" type="submit">Save</button><span class="note" id="shop-status"></span></div>
       </form>
       <div class="box-card">
