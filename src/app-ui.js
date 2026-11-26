@@ -648,11 +648,12 @@ function openStudio(st) {
 }
 function openEditor(id, roomId) {
   const h = S.drafts.get(id); if (!h) { toast('That home isn’t here any more.'); return; }
-  openStudio({ mode: 'edit', id, home: h, focus: roomId || null, tab: 'room', wall: 'back', part: 'hi' });
+  openStudio({ mode: 'edit', id, home: h, focus: roomId || null, tab: 'room', node: null, wall: 'back', part: 'lo' });
 }
 function focusRoom(id) {
   if (!studio) return;
   studio.room = id ? studio.home.rooms.find(r => r.id === id) || null : null;
+  studio.node = null;                  // another room opens on its tree
   if (!studio.room) studio.tab = studio.mode === 'edit' ? 'flat' : 'list';
   else if (studio.mode === 'edit' && (studio.tab === 'flat')) studio.tab = 'room';
   selectItem(null);
@@ -703,11 +704,13 @@ function flushSave() {
 engineHooks.onChange = () => { changed(false); if (studio && studio.tab === 'room') renderPane(); };
 engineHooks.onRoomTap = (id) => { if (studio) focusRoom(id); };
 engineHooks.onRoomMoved = (id, done) => { if (done) { changed(false); if (studio && studio.tab === 'flat') renderPane(); } };
-engineHooks.onSelect = (id) => { renderProps(); if (studio && studio.tab !== 'walls') renderPane(); };
+/* A piece tapped in the room: its panel opens, and the tree marks it (a wall's page stays as it is). */
+engineHooks.onSelect = (id) => { renderProps(); if (studio && (studio.tab !== 'room' || !studio.node || studio.node === 'furniture')) renderPane(); };
+/* A wall tapped in the room opens its page. The view stays put: "Zoom to this wall" moves it. */
 engineHooks.onWall = (roomId, wid) => {
   if (!studio || studio.mode !== 'edit') return;
-  if (!studio.room || studio.room.id !== roomId) { studio.wall = wid; studio.tab = 'walls'; focusRoom(roomId); return; }
-  studio.wall = wid; studio.tab = 'walls'; renderStudio();      // the view stays put: "Zoom to this wall" moves it
+  if (!studio.room || studio.room.id !== roomId) focusRoom(roomId);
+  setNode('wall:' + wid); studio.tab = 'room'; renderStudio(); $('pane').scrollTop = 0;
 };
 engineHooks.onMode = (m) => { $('v-3d').setAttribute('aria-pressed', m === '3d'); $('v-plan').setAttribute('aria-pressed', m === 'plan'); };
 $('v-3d').addEventListener('click', () => { if (mode === '3d') resetView(); setMode('3d'); });
@@ -745,7 +748,7 @@ function renderStudio() {
       <button type="button" class="btn small primary" id="st-copy">Copy to my homes</button>`;
     fillOwners(acts);
   }
-  const tabs = !edit ? [['list', r ? 'In this room' : 'In this home']] : r ? [['room', 'Room'], ['walls', 'Walls'], ['furniture', 'Furniture'], ['list', 'Shopping']] : [['flat', 'Rooms'], ['list', 'Shopping']];
+  const tabs = !edit ? [['list', r ? 'In this room' : 'In this home']] : r ? [['room', 'Room'], ['list', 'Shopping']] : [['flat', 'Rooms'], ['list', 'Shopping']];
   if (!tabs.some(([k]) => k === st.tab)) st.tab = tabs[0][0];
   $('side-tabs').innerHTML = tabs.map(([k, n]) => `<button type="button" role="tab" data-tab="${k}" aria-selected="${st.tab === k}">${n}</button>`).join('');
   renderPane(); renderProps();
@@ -765,7 +768,11 @@ function useTool(t) {
   setTool(t);
   syncTools(); renderProps(); syncWallMark();
 }
-$('side-tabs').addEventListener('click', (e) => { const b = e.target.closest('[data-tab]'); if (!b) return; studio.tab = b.dataset.tab; renderStudio(); });
+$('side-tabs').addEventListener('click', (e) => {     // the Room tab, tapped again, goes back up to the tree
+  const b = e.target.closest('[data-tab]'); if (!b) return;
+  if (b.dataset.tab === 'room' && studio.tab === 'room') studio.node = null;
+  studio.tab = b.dataset.tab; renderStudio();
+});
 $('st-actions').addEventListener('click', async (e) => {
   const b = e.target.closest('button'); if (!b) return;
   const st = studio;
@@ -795,20 +802,20 @@ function renderPane() {
   if (!studio) return;
   const p = $('pane'), keep = p.scrollTop;
   fills = [];
-  if (studio.room) ctx(studio.room);
-  p.innerHTML = studio.tab === 'flat' ? flatPane() : studio.tab === 'room' ? roomPane() : studio.tab === 'walls' ? wallsPane() : studio.tab === 'furniture' ? furniturePane() : listPane();
+  if (studio.room) { ctx(studio.room); setNode(studio.node); }
+  p.innerHTML = studio.tab === 'flat' ? flatPane() : studio.tab === 'room' ? (studio.node ? nodePage() : roomTree()) : listPane();
   for (const el of p.querySelectorAll('[data-fill]')) el.textContent = fills[+el.dataset.fill] || '';
   p.scrollTop = keep;
   if (studio.tab === 'list') fillListNames();
-  if (studio.tab === 'furniture') fillFurnitureNames();
   syncWallMark();
 }
-/* Tint the wall (or the part of it) the Walls tab is editing; nothing on the other tabs or with Measure or Paint on. */
+/* Tint the wall (or the part of it) whose page is open: a wall, one of its parts, its mouldings, its rail, or a window on it.
+   Nothing on the tree, the other pages, or with Measure or Paint on. */
 function syncWallMark() {
-  const st = studio, r = st && st.room;
-  if (!r || st.mode !== 'edit' || st.tab !== 'walls' || tool !== 'select') { showWall(null); return; }
+  const st = studio, r = st && st.room, k = st && st.node ? st.node.split(':')[0] : '';
+  if (!r || st.mode !== 'edit' || st.tab !== 'room' || !['wall', 'part', 'frames', 'rail', 'op'].includes(k) || tool !== 'select') { showWall(null); return; }
   const cfg = r.walls[st.wall], sp = Math.min(cfg.split, r.h);
-  const [z0, z1] = cfg.layout !== 'split' ? [0, r.h] : st.part === 'hi' ? [sp, r.h] : [0, sp];
+  const [z0, z1] = (k === 'part' || k === 'frames') && cfg.layout === 'split' ? (st.part === 'hi' ? [sp, r.h] : [0, sp]) : [0, r.h];
   showWall({ r, wid: st.wall, z0, z1 });
 }
 const numField = (label, act, val, extra = '', unit = 'cm', attrs = '') => `<label class="field"><span>${label}</span><span class="in"><input type="number" inputmode="decimal" data-act="${act}" ${extra} value="${val}" ${attrs}><span class="u">${unit}</span></span></label>`;
@@ -863,37 +870,146 @@ function addRoomDialog() {
   });
   [...box.querySelectorAll('#ar-next option')].forEach((op, i) => { op.textContent = h.rooms[i].name; });
 }
-function roomPane() {
+/* ---------- The room as a tree ---------- */
+/* The Room tab shows the room as a tree: the room, its floor, its four walls with what's on each (windows, doors, radiators,
+   mouldings, the rail, the two parts of a split wall) and its furniture. Each line opens its own page (studio.node):
+   'room', 'floor', 'furniture', 'wall:<wid>', 'part:<wid>:<hi|lo>', 'frames:<wid>:<hi|lo>', 'rail:<wid>', 'op:<id>'; null is the tree.
+   Wall pages set studio.wall and studio.part, which the wall editors and their events read (zoneOf). Furniture opens its own
+   floating panel, as when it's tapped in the room. */
+const PART_NAMES = { hi: 'Top part', lo: 'Bottom part' };
+const GLYPHS = {
+  room: '<path d="M3 21V9.5L12 3l9 6.5V21z"/><path d="M9 21v-6h6v6"/>',
+  window: '<rect x="5" y="4" width="14" height="16" rx="1"/><path d="M12 4v16M5 12h14"/>',
+  door: '<path d="M6 21V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v17M3 21h18"/><circle cx="14.5" cy="12" r=".8" fill="currentColor"/>',
+  radiator: '<path d="M6 6v12M10 6v12M14 6v12M18 6v12M4 18h16"/>',
+  frames: '<rect x="4" y="4" width="7" height="16" rx="1"/><rect x="13" y="4" width="7" height="16" rx="1"/>',
+  rail: '<path d="M3 11h18M3 14h18M3 5v15M21 5v15"/>',
+  furniture: '<path d="M5 12V9a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v3"/><path d="M3 12h18v5H3zM5 17v2M19 17v2"/>',
+};
+const glyph = (k) => `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${GLYPHS[k]}</svg>`;
+const CHEV = '<svg class="chev" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>';
+/* One line of the tree: a picture (a style, or a glyph), a name and a summary. Names come from storage: set as text. */
+function tnode(node, pic, name, sub) {
+  return `<button type="button" class="tnode" data-act="node" data-v="${esc(node)}"><span class="thumb" style="${pic.style || ''}">${pic.glyph ? glyph(pic.glyph) : ''}</span>
+    <span class="tx"><b data-fill="${fills.push(name) - 1}"></b><small data-fill="${fills.push(sub) - 1}"></small></span>${CHEV}</button>`;
+}
+/* What a finish is, in a few words, and its colour or picture. */
+function finishText(f) {
+  if (f.type === 'image') return f.img ? `Wallpaper · ${f.img.name}` : 'Wallpaper, none chosen';
+  if (f.type === 'pattern') return `Pattern · ${PATTERNS[f.pattern]}`;
+  const what = f.type === 'panel' ? 'Panelling' : 'Paint', pre = PRESETS.find(([, c]) => c === String(f.color).toLowerCase());
+  return `${what} · ${f.paint ? f.paint.name + (f.paint.mix && f.paint.code ? ' ' + f.paint.code : '') : pre ? pre[0] : f.color}`;
+}
+const finishPic = (f) => ({ style: f.type === 'image' && f.img ? `background-image:url(${blobSrc(f.img.src)})` : `background:${f.color}` });
+const framesText = (z) => (FRAME_STYLES.find(([k]) => k === z.style) || ['', 'Mouldings'])[1] + (z.style === 'mould' && z.moulding ? ` · ${z.moulding.name}` : '');
+const railText = (cfg) => (RAIL_STYLES.find(([k]) => k === cfg.railStyle) || ['', 'Rail'])[1] + (cfg.railStyle === 'straight' && cfg.railM ? ` · ${cfg.railM.name}` : '');
+const opText = (o) => `${cm(o.w)} × ${cm(o.h)} cm, ${cm(o.off)} cm from the left`;
+/* What hangs on a wall, as lines of the tree: its windows, doors and radiators, then its parts and their mouldings, then the rail. */
+function wallKids(r, wid) {
+  const cfg = r.walls[wid], split = cfg.layout === 'split', out = [];
+  for (const o of r.openings.filter(x => x.wall === wid)) out.push(tnode('op:' + o.id, { glyph: o.kind }, OP_KINDS[o.kind], opText(o)));
+  const frames = (key) => (cfg[key].frames ? tnode(`frames:${wid}:${key}`, { glyph: 'frames' }, 'Mouldings and panels', framesText(cfg[key])) : '');
+  if (split) for (const key of ['hi', 'lo']) {
+    out.push(tnode(`part:${wid}:${key}`, finishPic(cfg[key].f), PART_NAMES[key], finishText(cfg[key].f)));
+    const f = frames(key); if (f) out.push(`<div class="tgroup">${f}</div>`);
+  } else if (cfg.lo.frames) out.push(frames('lo'));
+  if (split && cfg.rail) out.push(tnode('rail:' + wid, { glyph: 'rail' }, 'Rail', railText(cfg)));
+  return out.join('');
+}
+function roomTree() {
+  const r = studio.room, fl = r.flooring, n = r.items.length;
+  const walls = WALL_IDS.map(wid => {
+    const cfg = r.walls[wid], split = cfg.layout === 'split', kids = wallKids(r, wid);
+    return tnode('wall:' + wid, finishPic(cfg[split ? 'hi' : 'lo'].f), WALL_NAMES[wid], split ? `${finishText(cfg.hi.f)}, over ${finishText(cfg.lo.f).toLowerCase()}` : finishText(cfg.lo.f))
+      + (kids ? `<div class="tgroup">${kids}</div>` : '');
+  }).join('');
+  const items = r.items.map(it => `<button type="button" class="tnode" data-act="sel" data-id="${it.id}" aria-pressed="${selId === it.id}">
+      <span class="thumb" style="${it.p.photo ? `background-image:url(${assetSrc(it.p.photo)})` : `background:${it.p.color}`}"></span>
+      <span class="tx"><b data-fill="${fills.push(it.p.name) - 1}"></b><small class="num">${cm(it.p.w)} × ${cm(it.p.d)} × ${cm(it.p.h)} cm</small></span></button>`).join('');
+  return `<div class="tree">
+    ${tnode('room', { glyph: 'room' }, r.name, `${sizeText(r)} · ${cm(r.h)} cm high`)}
+    ${tnode('floor', { style: fl ? (fl.src ? `background-image:url(${blobSrc(fl.src)})` : `background:${fl.color}`) : `background-image:url(${floorPic(r.floor)})` }, 'Floor', fl ? fl.name : FLOORS[r.floor][0])}
+    ${walls}
+    ${tnode('furniture', { glyph: 'furniture' }, 'Furniture', n ? `${n} piece${n === 1 ? '' : 's'}` : 'None yet')}
+    <div class="tgroup">${items}<button type="button" class="tadd" data-act="addfurn">+ Add furniture</button></div></div>
+    <p class="note">Tap a line to change it, or tap a wall or a piece of furniture in the room.</p>`;
+}
+/* The page a line opens: a way back, its name, its editor. */
+function nodeParent(n) {
+  const [k, a, b] = n.split(':'), r = studio.room;
+  if (k === 'op') { const o = r.openings.find(x => x.id === a); return o ? 'wall:' + o.wall : null; }
+  if (k === 'frames') return r.walls[a].layout === 'split' ? `part:${a}:${b}` : 'wall:' + a;
+  if (k === 'part' || k === 'rail') return 'wall:' + a;
+  return null;
+}
+function nodeName(n) {
+  const [k, a, b] = n.split(':'), r = studio.room;
+  if (k === 'room') return 'Name and size';     // the crumb above it already says the room's name
+  if (k === 'wall') return WALL_NAMES[a];
+  if (k === 'part') return `${PART_NAMES[b]} of the ${WALL_NAMES[a].toLowerCase()}`;
+  if (k === 'frames') return 'Mouldings and panels';
+  if (k === 'op') { const o = r.openings.find(x => x.id === a); return o ? OP_KINDS[o.kind] : ''; }
+  return { floor: 'Floor', furniture: 'Furniture', rail: 'Rail' }[k] || '';
+}
+/* A node that no longer exists (a window removed, a wall no longer split) falls back to the nearest one that does. */
+function validNode(n) {
+  if (!n) return null;
+  const [k, a, b] = n.split(':'), r = studio.room;
+  if (k === 'op') return r.openings.some(o => o.id === a) ? n : null;
+  if (!['part', 'frames', 'rail', 'wall'].includes(k)) return n;
+  if (!r.walls[a]) return null;
+  const split = r.walls[a].layout === 'split';
+  if (k === 'part') return split ? n : 'wall:' + a;
+  if (k === 'rail') return split && r.walls[a].rail ? n : 'wall:' + a;
+  if (k === 'frames') { const key = split ? b : 'lo'; return r.walls[a][key].frames ? `frames:${a}:${key}` : split ? `part:${a}:${b}` : 'wall:' + a; }
+  return n;
+}
+function setNode(n) {
+  const st = studio, r = st.room;
+  n = r ? validNode(n) : null;
+  st.node = n;
+  if (!n) return;
+  const [k, a, b] = n.split(':'), wid = k === 'op' ? r.openings.find(o => o.id === a).wall : r.walls[a] ? a : null;
+  if (wid) { st.wall = wid; st.part = r.walls[wid].layout !== 'split' ? 'lo' : b === 'hi' || b === 'lo' ? b : st.part || 'hi'; }
+}
+function goNode(n) { setNode(n); studio.tab = 'room'; renderPane(); $('pane').scrollTop = 0; }
+function nodePage() {
+  const n = studio.node, [k, a, b] = n.split(':'), par = nodeParent(n), r = studio.room;
+  const sub = k === 'op' ? `On the ${WALL_NAMES[studio.wall].toLowerCase()}` : k === 'frames' ? `On the ${WALL_NAMES[a].toLowerCase()}${r.walls[a].layout === 'split' ? ', ' + PART_NAMES[b].toLowerCase() : ''}`
+    : k === 'wall' ? `${cm(wallLen(a))} cm long` : k === 'rail' ? `Along the ${WALL_NAMES[a].toLowerCase()}, ${cm(Math.min(r.walls[a].split, r.h))} cm up` : '';
+  const body = k === 'room' ? roomEditor() : k === 'floor' ? floorNote(r) : k === 'furniture' ? furnitureEditor() : k === 'wall' ? wallEditor(a)
+    : k === 'part' ? partEditor(a, b) : k === 'frames' ? framesEditor(a, b) : k === 'rail' ? railEditor(a) : opEditor(a);
+  return `<div class="node-top"><button type="button" class="crumb" data-act="nodeback"><span aria-hidden="true">‹</span> <span data-fill="${fills.push(par ? nodeName(par) : r.name) - 1}"></span></button>
+    <h3 class="node-h" data-fill="${fills.push(nodeName(n)) - 1}"></h3>${sub ? `<p class="note">${sub}</p>` : ''}</div>${body}`;
+}
+function roomEditor() {
   const r = studio.room;
-  const ops = r.openings.map(o => `<div class="op-card"><div class="op-h"><span>${OP_KINDS[o.kind]}</span><button type="button" class="btn small danger" data-act="opdel" data-id="${o.id}">Remove</button></div>
-    <label class="field"><span>Wall</span><span class="in"><select data-act="op" data-id="${o.id}" data-k="wall">${WALL_IDS.map(w => `<option value="${w}" ${w === o.wall ? 'selected' : ''}>${WALL_NAMES[w]}</option>`).join('')}</select></span></label>
+  return `<label class="field"><span>Room name</span><span class="in"><input data-act="rname" maxlength="60" value="${esc(r.name)}"></span></label>
+    <div class="fields">${numField('Width', 'dim', cm(r.w), 'data-k="w" min="100" max="1500" step="1"')}${numField('Length', 'dim', cm(r.l), 'data-k="l" min="100" max="1500" step="1"')}${numField('Ceiling', 'dim', cm(r.h), 'data-k="h" min="200" max="500" step="1"')}</div>
+    <p class="note">Width runs along the back and front walls, length along the left and right walls. “From the left” is measured facing the wall.</p>
+    <div class="sec-h">This home</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap"><button type="button" class="btn small" data-act="addroom">Add another room</button><button type="button" class="btn small" data-act="rdup">Duplicate this room</button>${studio.home.rooms.length > 1 ? `<button type="button" class="btn small danger" data-act="rdel">${armedRoom === r.id ? 'Click again to remove this room' : 'Remove this room'}</button>` : ''}</div>`;
+}
+function furnitureEditor() {
+  const r = studio.room;
+  return `<button type="button" class="btn primary" data-act="addfurn">Add furniture</button>
+    <div class="list">${r.items.map(it => `<button type="button" class="lrow" data-act="sel" data-id="${it.id}" aria-pressed="${selId === it.id}">
+      <span class="thumb" style="${it.p.photo ? `background-image:url(${assetSrc(it.p.photo)})` : `background-color:${it.p.color}`}"></span>
+      <span class="tx"><b data-fill="${fills.push(it.p.name) - 1}"></b><small class="num">${cm(it.p.w)} × ${cm(it.p.d)} × ${cm(it.p.h)} cm</small></span></button>`).join('') || '<p class="note">Nothing yet. Add a sofa, a bed or anything from a shop.</p>'}</div>
+    ${r.items.length ? '<p class="note">Tap a piece to rotate, copy or remove it, or drag it in the room.</p>' : ''}`;
+}
+function opEditor(id) {
+  const o = studio.room.openings.find(x => x.id === id);
+  return `<label class="field"><span>Wall</span><span class="in"><select data-act="op" data-id="${o.id}" data-k="wall">${WALL_IDS.map(w => `<option value="${w}" ${w === o.wall ? 'selected' : ''}>${WALL_NAMES[w]}</option>`).join('')}</select></span></label>
     <div class="fields two">
       ${numField('From the left', 'op', cm(o.off), `data-id="${o.id}" data-k="off" min="0" step="1"`)}
       ${numField('Width', 'op', cm(o.w), `data-id="${o.id}" data-k="w" min="20" step="1"`)}
       ${numField('Height', 'op', cm(o.h), `data-id="${o.id}" data-k="h" min="10" step="1"`)}
       ${o.kind === 'door' ? '' : numField(o.kind === 'window' ? 'Sill height' : 'From the floor', 'op', cm(o.y), `data-id="${o.id}" data-k="y" min="0" step="1"`)}
-    </div></div>`).join('');
-  return `<label class="field"><span>Room name</span><span class="in"><input data-act="rname" maxlength="60" value="${esc(r.name)}"></span></label>
-    <div class="sec-h">Size</div>
-    <div class="fields">${numField('Width', 'dim', cm(r.w), 'data-k="w" min="100" max="1500" step="1"')}${numField('Length', 'dim', cm(r.l), 'data-k="l" min="100" max="1500" step="1"')}${numField('Ceiling', 'dim', cm(r.h), 'data-k="h" min="200" max="500" step="1"')}</div>
-    <p class="note">Width runs along the back and front walls, length along the left and right walls. “From the left” is measured facing the wall.</p>
-    <div class="sec-h">Floor</div>
-    ${floorNote(r)}
-    <div class="sec-h">Windows, doors and radiators</div>
-    ${ops || '<p class="note">None yet.</p>'}
-    <div style="display:flex;gap:6px;flex-wrap:wrap">${Object.entries(OP_KINDS).map(([k, n]) => `<button type="button" class="btn small" data-act="opadd" data-v="${k}">Add ${n.toLowerCase()}</button>`).join('')}</div>
-    <div class="sec-h">This home</div>
-    <div style="display:flex;gap:6px;flex-wrap:wrap"><button type="button" class="btn small" data-act="addroom">Add another room</button><button type="button" class="btn small" data-act="rdup">Duplicate this room</button>${studio.home.rooms.length > 1 ? `<button type="button" class="btn small danger" data-act="rdel">${armedRoom === r.id ? 'Click again to remove this room' : 'Remove this room'}</button>` : ''}</div>`;
+    </div>
+    <p class="note">“From the left” is measured facing the wall.</p>
+    <div><button type="button" class="btn small danger" data-act="opdel" data-id="${o.id}">Remove this ${OP_KINDS[o.kind].toLowerCase()}</button></div>`;
 }
-function furniturePane() {
-  const r = studio.room;
-  return `<button type="button" class="btn primary" data-act="addfurn">Add furniture</button>
-    <div class="sec-h">In the room · ${r.items.length}</div>
-    <div class="list">${r.items.map(it => `<button type="button" class="lrow" data-act="sel" data-id="${it.id}" aria-pressed="${selId === it.id}">
-      <span class="thumb" style="${it.p.photo ? `background-image:url(${assetSrc(it.p.photo)})` : `background-color:${it.p.color}`}"></span>
-      <span class="tx"><b></b><small class="num">${cm(it.p.w)} × ${cm(it.p.d)} × ${cm(it.p.h)} cm</small></span></button>`).join('') || '<p class="note">Nothing yet. Add a sofa, a bed or anything from a shop.</p>'}</div>`;
-}
-function fillFurnitureNames() { const rows = $('pane').querySelectorAll('[data-act="sel"] b'); studio.room.items.forEach((it, i) => { if (rows[i]) rows[i].textContent = it.p.name; }); }
 
 /* Shopping list: furniture grouped by product, flooring packs from the rooms, wallpaper rolls, paint tins and moulding strips from the walls. */
 function shopping(home) {
@@ -1007,31 +1123,51 @@ function mouldPick(act, cur, label) {
     ${plan ? `<div>${plan.text}</div>${plan.cost !== null ? `<div class="price">${euro(plan.cost)}</div>` : ''}
     <p class="note">Across the whole home: each frame side and rail stretch cut from ${cur.len.toLocaleString()} m strips, corners mitred, 5 mm lost a cut.${shopLink(cur.url, cur.ref, "Shop ↗", "", " ")}</p>${linkDisclosure(cur.url, cur.ref)}` : ''}`;
 }
-function wallsPane() {
-  const r = studio.room, wid = studio.wall, cfg = r.walls[wid], split = cfg.layout === 'split', z = zoneOf(), part = split ? studio.part : 'lo';
-  const partName = !split ? 'the wall' : part === 'hi' ? 'the top part' : 'the bottom part';
-  const ops = r.openings.filter(o => o.wall === wid).map(o => OP_KINDS[o.kind].toLowerCase());
-  return `<div class="seg wide" role="group" aria-label="Wall">${WALL_IDS.map(w => `<button type="button" data-act="wallpick" data-v="${w}" aria-pressed="${w === wid}">${WALL_NAMES[w].replace(' wall', '')}</button>`).join('')}</div>
-    <p class="note">${WALL_NAMES[wid]}, ${cm(wallLen(wid))} cm${ops.length ? ', with a ' + ops.join(' and a ') : ''}. Tap a wall in the room to pick it.</p>
-    <div class="pair"><button type="button" class="btn small" data-act="wallzoom">Zoom to this wall</button><button type="button" class="btn small" data-act="wallroom">Whole room</button></div>
+/* What can be added to a wall or a part of it, as buttons under its lines. */
+function addRow(wid, key) {
+  const cfg = studio.room.walls[wid], split = cfg.layout === 'split', b = (act, v, label, extra = '') => `<button type="button" class="btn small" data-act="${act}" data-v="${v}" data-wall="${wid}" ${extra}>${label}</button>`;
+  const here = key ? [] : Object.entries(OP_KINDS).map(([k, n]) => b('opadd', k, 'Add ' + n.toLowerCase()));
+  if ((key || !split) && !cfg[key || 'lo'].frames) here.push(b('framesadd', key || 'lo', 'Add mouldings or panels'));
+  if (!key && split && !cfg.rail) here.push(b('railadd', '', 'Add a rail'));
+  return here.length ? `<div class="addrow">${here.join('')}</div>` : '';
+}
+/* A wall: how it's laid out (one part, or split in two at a height), its finish when it's one part, and what's on it. */
+function wallEditor(wid) {
+  const r = studio.room, cfg = r.walls[wid], split = cfg.layout === 'split', z = cfg.lo, kids = wallKids(r, wid);
+  return `<div class="pair"><button type="button" class="btn small" data-act="wallzoom">Zoom to this wall</button><button type="button" class="btn small" data-act="wallroom">Whole room</button></div>
     <div class="seg wide" role="group" aria-label="Layout"><button type="button" data-act="layout" data-v="whole" aria-pressed="${!split}">One part</button><button type="button" data-act="layout" data-v="split" aria-pressed="${split}">Split in two</button></div>
-    ${split ? `<div class="fields two">${numField('Split height', 'split', cm(cfg.split), 'min="20" max="400" step="1"')}<label class="check" style="align-self:end;padding-bottom:7px"><input type="checkbox" data-act="rail" ${cfg.rail ? 'checked' : ''}><span>Rail</span></label></div>
-      ${cfg.rail ? `<div class="seg wide" role="group" aria-label="Rail shape">${RAIL_STYLES.map(([k, n]) => `<button type="button" data-act="railStyle" data-v="${k}" aria-pressed="${cfg.railStyle === k}">${n}</button>`).join('')}</div>
-      ${cfg.railStyle === 'straight' ? mouldPick('railmould', cfg.railM, 'Rail moulding') : ''}
-      <span class="note">Rail colour</span>${swatchRow('trim', cfg.trim || '#fbfbf9', '', false)}` : ''}
-      <div class="seg wide" role="group" aria-label="Part"><button type="button" data-act="part" data-v="hi" aria-pressed="${part === 'hi'}">Top part</button><button type="button" data-act="part" data-v="lo" aria-pressed="${part === 'lo'}">Bottom part</button></div>` : ''}
-    ${finishEditor(z.f, 'f', !split ? 'Finish' : part === 'hi' ? 'Top part finish' : 'Bottom part finish')}
-    <div class="finish"><label class="check"><input type="checkbox" data-act="frames" ${z.frames ? 'checked' : ''}><span>Mouldings or panels on ${partName}</span></label>
-      ${z.frames ? `<div class="seg wide" role="group" aria-label="Kind of panel">${FRAME_STYLES.map(([k, n]) => `<button type="button" data-act="fstyle" data-v="${k}" aria-pressed="${z.style === k}">${n}</button>`).join('')}</div>
-        ${z.style === 'mould' ? mouldPick('pmould', z.moulding, 'Moulding') : ''}
-        <span class="note">${z.style === 'soft' || z.style === 'tops' ? 'Panel colour' : 'Moulding colour'}</span>${swatchRow('mould', z.mould, '', true)}
-        ${(() => { const pn = panelNow(wid, part); return `<div class="fields">${numField('Panels', 'pcount', pn.n, 'min="1" max="24" step="1"', '')}${numField('Width', 'pwidth', cm(pn.w), 'min="5" max="400" step="1"')}${numField('Height', 'pheight', cm(pn.h), 'min="10" max="400" step="1"')}${numField('Separation', 'pgap', cm(pn.gap), 'min="0" max="100" step="1"')}${numField('Padding', 'ppad', cm(pn.pad), 'min="3" max="200" step="1"')}</div>
-        <p class="note">Padding is the space at the ends of the wall and around windows and doors. A new width keeps the number and separation and moves the padding; the other values keep the rest and change the width. The height stays centred.${pn.uneven ? ' Panels beside a window or door get their own width to fill their stretch.' : ''}</p>`; })()}
-        ${z.style !== 'soft' ? `<div class="seg wide" role="group" aria-label="Inside"><button type="button" data-act="inner" data-v="same" aria-pressed="${!z.inner}">${z.style === 'tops' ? 'Plain colour' : 'Same as the wall'}</button><button type="button" data-act="inner" data-v="own" aria-pressed="${!!z.inner}">Its own finish</button></div>` : ''}` : ''}
-    </div>
-    ${z.frames && z.inner && z.style !== 'soft' ? finishEditor(z.inner, 'in', z.style === 'tops' ? 'Panel finish' : 'Inside the frames') : ''}
-    ${paperNote(z)}${baseNote(z)}${paintNote(z)}
-    <button type="button" class="btn" data-act="allwalls">Use this on all four walls</button>`;
+    ${split ? numField('Split height', 'split', cm(cfg.split), 'min="20" max="400" step="1"') : `${finishEditor(z.f, 'f', 'Finish')}${paperNote(z)}${baseNote(z)}${paintNote(z)}`}
+    <div class="sec-h">On this wall</div>
+    ${kids ? `<div class="tree">${kids}</div>` : '<p class="note">Nothing yet.</p>'}
+    ${addRow(wid)}
+    <button type="button" class="btn" data-act="allwalls">Use this wall on all four walls</button>`;
+}
+/* One part of a split wall: its finish and its mouldings. */
+function partEditor(wid, key) {
+  const z = studio.room.walls[wid][key];
+  return `${finishEditor(z.f, 'f', 'Finish')}${paperNote(z)}${baseNote(z)}${paintNote(z)}
+    ${z.frames ? `<div class="sec-h">On this part</div><div class="tree">${tnode(`frames:${wid}:${key}`, { glyph: 'frames' }, 'Mouldings and panels', framesText(z))}</div>` : ''}
+    ${addRow(wid, key)}`;
+}
+/* Mouldings or panels on a wall or a part of it: their kind, moulding, colour, how many and how big, and what's inside them. */
+function framesEditor(wid, key) {
+  const z = studio.room.walls[wid][key], pn = panelNow(wid, key);
+  return `<div class="seg wide" role="group" aria-label="Kind of panel">${FRAME_STYLES.map(([k, n]) => `<button type="button" data-act="fstyle" data-v="${k}" aria-pressed="${z.style === k}">${n}</button>`).join('')}</div>
+    ${z.style === 'mould' ? mouldPick('pmould', z.moulding, 'Moulding') : ''}
+    <span class="note">${z.style === 'soft' || z.style === 'tops' ? 'Panel colour' : 'Moulding colour'}</span>${swatchRow('mould', z.mould, '', true)}
+    <div class="fields">${numField('Panels', 'pcount', pn.n, 'min="1" max="24" step="1"', '')}${numField('Width', 'pwidth', cm(pn.w), 'min="5" max="400" step="1"')}${numField('Height', 'pheight', cm(pn.h), 'min="10" max="400" step="1"')}${numField('Separation', 'pgap', cm(pn.gap), 'min="0" max="100" step="1"')}${numField('Padding', 'ppad', cm(pn.pad), 'min="3" max="200" step="1"')}</div>
+    <p class="note">Padding is the space at the ends of the wall and around windows and doors. A new width keeps the number and separation and moves the padding; the other values keep the rest and change the width. The height stays centred.${pn.uneven ? ' Panels beside a window or door get their own width to fill their stretch.' : ''}</p>
+    ${z.style !== 'soft' ? `<div class="seg wide" role="group" aria-label="Inside"><button type="button" data-act="inner" data-v="same" aria-pressed="${!z.inner}">${z.style === 'tops' ? 'Plain colour' : 'Same as the wall'}</button><button type="button" data-act="inner" data-v="own" aria-pressed="${!!z.inner}">Its own finish</button></div>` : ''}
+    ${z.inner && z.style !== 'soft' ? finishEditor(z.inner, 'in', z.style === 'tops' ? 'Panel finish' : 'Inside the frames') : ''}
+    <div><button type="button" class="btn small danger" data-act="framesdel" data-v="${key}" data-wall="${wid}">Remove the mouldings</button></div>`;
+}
+/* The rail where a split wall changes finish: its shape, moulding and colour. */
+function railEditor(wid) {
+  const cfg = studio.room.walls[wid];
+  return `<div class="seg wide" role="group" aria-label="Rail shape">${RAIL_STYLES.map(([k, n]) => `<button type="button" data-act="railStyle" data-v="${k}" aria-pressed="${cfg.railStyle === k}">${n}</button>`).join('')}</div>
+    ${cfg.railStyle === 'straight' ? mouldPick('railmould', cfg.railM, 'Rail moulding') : ''}
+    <span class="note">Rail colour</span>${swatchRow('trim', cfg.trim || '#fbfbf9', '', false)}
+    <div><button type="button" class="btn small danger" data-act="raildel" data-wall="${wid}">Remove the rail</button></div>`;
 }
 /* A wall's area between two heights: its length × the height, minus the windows and doors in it (radiators are painted behind). */
 function wallPartArea(r, wid, z0, z1) {
@@ -1267,13 +1403,25 @@ async function paneEvent(e) {
   }
   if (act === 'floorextra' && type === 'change' && r.flooring) { const v = +t.value; if (v >= 0 && v <= 50) r.flooring.extra = v; changed(true); rerender(); return; }
   if (act === 'floorall' && r.flooring) { for (const x of studio.home.rooms) x.flooring = { ...r.flooring }; changed(true); rerender(); toast('Every room has this floor now.'); return; }
-  if (act === 'opadd') {
-    const k = t.dataset.v, wall = k === 'door' ? 'front' : 'back', len = wall === 'back' || wall === 'front' ? r.w : r.l;
-    const d = { window: { w: 1.2, h: 1.3, y: 0.9 }, door: { w: 0.82, h: 2.03, y: 0 }, radiator: { w: 0.8, h: 0.6, y: 0.12 } }[k];
-    r.openings.push({ id: newId('o'), kind: k, wall, off: Math.max(0, (len - d.w) / 2), ...d });
-    changed(true); rerender(); return;
+  // the tree: open a line, go back up, add or remove what hangs on a wall
+  if (act === 'node') { goNode(t.dataset.v); return; }
+  if (act === 'nodeback') { goNode(studio.node && nodeParent(studio.node)); return; }
+  if (act === 'framesadd' || act === 'framesdel') {
+    const w = t.dataset.wall, key = t.dataset.v, cfg = r.walls[w]; if (!cfg || !cfg[key]) return;
+    cfg[key].frames = act === 'framesadd'; changed(true);
+    goNode(act === 'framesadd' ? `frames:${w}:${key}` : cfg.layout === 'split' ? `part:${w}:${key}` : 'wall:' + w); return;
   }
-  if (act === 'opdel') { r.openings = r.openings.filter(o => o.id !== t.dataset.id); changed(true); rerender(); return; }
+  if (act === 'railadd' || act === 'raildel') {
+    const w = t.dataset.wall; if (!r.walls[w]) return;
+    r.walls[w].rail = act === 'railadd'; changed(true); goNode(act === 'railadd' ? 'rail:' + w : 'wall:' + w); return;
+  }
+  if (act === 'opadd') {                 // on the wall whose page it was added from; then its own page
+    const k = t.dataset.v, wall = WALL_IDS.includes(t.dataset.wall) ? t.dataset.wall : k === 'door' ? 'front' : 'back', len = wall === 'back' || wall === 'front' ? r.w : r.l;
+    const d = { window: { w: 1.2, h: 1.3, y: 0.9 }, door: { w: 0.82, h: 2.03, y: 0 }, radiator: { w: 0.8, h: 0.6, y: 0.12 } }[k];
+    const o = { id: newId('o'), kind: k, wall, off: Math.max(0, (len - d.w) / 2), ...d };
+    r.openings.push(o); changed(true); goNode('op:' + o.id); return;
+  }
+  if (act === 'opdel') { const o = r.openings.find(x => x.id === t.dataset.id); r.openings = r.openings.filter(x => x !== o); changed(true); goNode(o ? 'wall:' + o.wall : null); return; }
   if (act === 'op' && type === 'change') {
     const o = r.openings.find(x => x.id === t.dataset.id); if (!o) return;
     const k = t.dataset.k;
@@ -1306,13 +1454,10 @@ async function paneEvent(e) {
   if (act === 'sel') { selectItem(t.dataset.id); return; }
   // walls
   const wid = studio.wall, cfg = r.walls[wid], z = zoneOf(), part = cfg.layout === 'split' ? studio.part : 'lo';
-  if (act === 'wallpick') { studio.wall = t.dataset.v; rerender(); return; }
   if (act === 'wallzoom') { flyTo(studio.wall); return; }
   if (act === 'wallroom') { setMode('3d'); resetView(); return; }
   if (act === 'layout') { cfg.layout = t.dataset.v; if (cfg.layout === 'split') studio.part = 'hi'; changed(true); rerender(); return; }
-  if (act === 'part') { studio.part = t.dataset.v; rerender(); return; }
   if (act === 'split' && type === 'change') { const v = +t.value / 100; if (v >= 0.2 && v <= r.h - 0.1) cfg.split = v; changed(true); rerender(); return; }
-  if (act === 'rail') { cfg.rail = t.checked; changed(true); rerender(); return; }
   if (act === 'railStyle') { cfg.railStyle = t.dataset.v; changed(true); rerender(); return; }
   if (act === 'pickmould') {              // a moulding no longer listed stays until another is picked
     const which = t.dataset.v, was = which === 'pmould' ? z.moulding : cfg.railM;
@@ -1328,7 +1473,6 @@ async function paneEvent(e) {
   const hexVal = () => (t.dataset.hex ? (parseHex(t.value) || null) : t.tagName === 'INPUT' ? t.value : t.dataset.v);
   if (act === 'trim') { const h = hexVal(); if (!h && t.dataset.hex) return; cfg.trim = h || null; changed(true); if (type !== 'input') rerender(); return; }
   if (act === 'mould') { const h = hexVal(); if (!h && t.dataset.hex && t.value) return; z.mould = h || null; changed(true); if (type !== 'input') rerender(); return; }
-  if (act === 'frames') { z.frames = t.checked; changed(true); rerender(); return; }
   if (act === 'fstyle') { z.style = t.dataset.v; changed(true); rerender(); return; }
   if (['pcount', 'pwidth', 'pgap', 'ppad', 'pheight'].includes(act)) {
     if (type !== 'change') return;
@@ -1533,7 +1677,7 @@ function addProduct(ref) {
   const c = freeSpot(r, it); it.x = c.x; it.z = c.z;
   r.items.push(it);
   syncItems(); selectItem(it.id); changed(false);
-  if (studio.tab === 'furniture') renderPane();
+  if (studio.tab === 'room') renderPane();
 }
 /* The free spot nearest the middle of the room, so a new piece doesn't land inside another one. Rugs go anywhere. */
 function freeSpot(r, it) {
@@ -1664,7 +1808,7 @@ async function propsEvent(e) {
     if (k === 'close') { selectItem(null); return; }
     if (k === 'rot') { it.rot = (it.rot + 1) % 4; const c = clampItem(room, it); it.x = c.x; it.z = c.z; placeItem(it); showSelection(); changed(false); return; }
     if (k === 'dup') { const c2 = JSON.parse(JSON.stringify(it)); c2.id = newId('i'); c2.x += 0.3; c2.z += 0.3; const c = clampItem(room, c2); c2.x = c.x; c2.z = c.z; room.items.push(c2); syncItems(); selectItem(c2.id); changed(false); return; }
-    if (k === 'del') { room.items = room.items.filter(i => i !== it); syncItems(); selectItem(null); changed(false); if (studio.tab !== 'walls') renderPane(); return; }
+    if (k === 'del') { room.items = room.items.filter(i => i !== it); syncItems(); selectItem(null); changed(false); renderPane(); return; }
     if (k === 'color') { it.p.color = t.dataset.v; buildItem(it); syncLamps(); changed(false); renderProps(); return; }
   }
   if (k === 'colorpick' && e.type === 'input') { it.p.color = t.value; buildItem(it); syncLamps(); changed(false); return; }

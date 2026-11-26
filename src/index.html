@@ -186,6 +186,26 @@ h2 { margin: 0; font-family: var(--font-display); font-size: 19px; font-weight: 
 .lrow .tx small { color: var(--muted); font-size: 11.5px; }
 .op-card { border: 1px solid var(--line); border-radius: var(--r-panel); padding: 10px; display: flex; flex-direction: column; gap: 8px; }
 .op-card .op-h { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-weight: 800; }
+/* the room as a tree: one line per thing, what hangs on a wall indented under it, a guide line down the side */
+.tree { display: flex; flex-direction: column; gap: 2px; }
+.tnode { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 48px; padding: 6px 8px; text-align: left; font: inherit; color: inherit; background: transparent; border: 1px solid transparent; border-radius: var(--r-panel); cursor: pointer; }
+.tnode:hover { background: var(--surface-2); }
+.tnode:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.tnode[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); }
+.tnode .thumb { width: 32px; height: 32px; display: grid; place-items: center; color: var(--muted); }
+.tnode .tx { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.tnode .tx b { font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tnode .tx small { color: var(--muted); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tnode .chev { color: var(--muted); flex: none; }
+.tgroup { display: flex; flex-direction: column; gap: 2px; margin-left: 23px; padding-left: 8px; border-left: 1px solid var(--line); }
+.tadd { align-self: flex-start; min-height: 40px; padding: 6px 8px; font: inherit; font-size: 13px; font-weight: 700; color: var(--accent); background: transparent; border: 0; border-radius: var(--r-panel); cursor: pointer; }
+.tadd:hover { background: var(--surface-2); }
+/* a line's own page: the way back up, its name */
+.node-top { display: flex; flex-direction: column; gap: 2px; }
+.crumb { align-self: flex-start; display: inline-flex; gap: 4px; align-items: center; min-height: 44px; margin: -6px 0 -6px -6px; padding: 4px 6px; font: inherit; font-size: 13px; font-weight: 700; color: var(--accent); background: transparent; border: 0; border-radius: var(--r-panel); cursor: pointer; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.crumb:hover { background: var(--surface-2); }
+.node-h { margin: 0; font-size: 18px; font-weight: 800; letter-spacing: -0.02em; overflow-wrap: anywhere; }
+.addrow { display: flex; gap: 6px; flex-wrap: wrap; }
 .finish { display: flex; flex-direction: column; gap: 9px; padding: 10px; border: 1px solid var(--line); border-radius: var(--r-panel); }
 .fin-h { font-size: 12.5px; font-weight: 800; }
 .types { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; }
