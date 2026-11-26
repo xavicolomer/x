@@ -814,6 +814,7 @@ for (const el of studioEl.querySelectorAll('.rbtn')) el.addEventListener('click'
 $('st-fit').addEventListener('click', () => { if (studio) resetView(true); });
 function changed(rebuild) {
   if (!studio || studio.mode !== 'edit') return;
+  const fr = curFrame(); if (fr) syncLinked(fr);       // a moulding's page is open: its linked copies follow it
   if (rebuild) { buildRoom(); showSelection(); }
   if (tool === 'paint') renderProps();          // the areas follow edits made in the side panel
   $('st-save').textContent = 'Saving…';
@@ -854,6 +855,19 @@ engineHooks.onOpening = (roomId, id) => {
 engineHooks.onOpMoved = (roomId, id) => {
   if (!studio || !studio.room || studio.room.id !== roomId) return;
   setNode('op:' + id); studio.tab = 'room';
+  changed(false); renderStudio();
+};
+/* A moulding, the same: tapped, its page; dragged and let go, saved and its page (its place is its own: the linked copies stay put). */
+engineHooks.onFrame = (roomId, id) => {
+  if (!studio || studio.mode !== 'edit') return;
+  if (!studio.room || studio.room.id !== roomId) focusRoom(roomId);
+  if (selId) selectItem(null);
+  setNode('frame:' + id); studio.tab = 'room'; renderStudio(); $('pane').scrollTop = 0;
+  raiseSheet();
+};
+engineHooks.onFrameMoved = (roomId, id) => {
+  if (!studio || !studio.room || studio.room.id !== roomId) return;
+  setNode('frame:' + id); studio.tab = 'room';
   changed(false); renderStudio();
 };
 /* Empty floor tapped on a phone: whatever was picked is let go (a piece, a wall's page) and the sheet goes back down. */
@@ -961,13 +975,15 @@ function renderPane() {
   syncWallMark();
   renderPeek();
 }
-/* Tint the wall (or the part of it) whose page is open: a wall, one of its parts, its mouldings, its rail, or a window on it.
-   Nothing on the tree, the other pages, or with Measure or Paint on. */
+/* Tint the wall (or the part of it) whose page is open: a wall, one of its parts, its rail, or a window on it; or just the moulding
+   whose page it is. Nothing on the tree, the other pages, or with Measure or Paint on. */
 function syncWallMark() {
   const st = studio, r = st && st.room, k = st && st.node ? st.node.split(':')[0] : '';
-  if (!r || st.mode !== 'edit' || st.tab !== 'room' || !['wall', 'part', 'frames', 'rail', 'op'].includes(k) || tool !== 'select') { showWall(null); return; }
+  if (!r || st.mode !== 'edit' || st.tab !== 'room' || !['wall', 'part', 'frame', 'rail', 'op'].includes(k) || tool !== 'select') { showWall(null); return; }
+  const fr = curFrame();
+  if (fr) { showWall({ r, wid: fr.wall, z0: fr.v, z1: fr.v + fr.h, u0: fr.u, u1: fr.u + fr.w }); return; }
   const cfg = r.walls[st.wall], sp = Math.min(cfg.split, r.h);
-  const [z0, z1] = (k === 'part' || k === 'frames') && cfg.layout === 'split' ? (st.part === 'hi' ? [sp, r.h] : [0, sp]) : [0, r.h];
+  const [z0, z1] = k === 'part' && cfg.layout === 'split' ? (st.part === 'hi' ? [sp, r.h] : [0, sp]) : [0, r.h];
   showWall({ r, wid: st.wall, z0, z1 });
 }
 const numField = (label, act, val, extra = '', unit = 'cm', attrs = '') => `<label class="field"><span>${label}</span><span class="in"><input type="number" inputmode="decimal" data-act="${act}" ${extra} value="${val}" ${attrs}><span class="u">${unit}</span></span></label>`;
@@ -1026,8 +1042,8 @@ function addRoomDialog() {
 /* ---------- The room as a tree ---------- */
 /* The Room tab shows the room as a tree: the room, its floor, its four walls with what's on each (windows, doors, radiators,
    mouldings, the rail, the two parts of a split wall) and its furniture. Each line opens its own page (studio.node):
-   'room', 'floor', 'furniture', 'wall:<wid>', 'part:<wid>:<hi|lo>', 'frames:<wid>:<hi|lo>', 'rail:<wid>', 'op:<id>'; null is the tree.
-   Wall pages set studio.wall and studio.part, which the wall editors and their events read (zoneOf). Furniture opens its own
+   'room', 'floor', 'furniture', 'wall:<wid>', 'part:<wid>:<hi|lo>', 'frame:<id>' (a moulding), 'rail:<wid>', 'op:<id>'; null is the tree.
+   Wall pages (and a moulding's) set studio.wall and studio.part, which the wall editors and their events read (zoneOf). Furniture opens its own
    floating panel, as when it's tapped in the room. */
 const PART_NAMES = { hi: 'Top part', lo: 'Bottom part' };
 const GLYPHS = {
@@ -1054,7 +1070,46 @@ function finishText(f) {
   return `${what} · ${f.paint ? f.paint.name + (f.paint.mix && f.paint.code ? ' ' + f.paint.code : '') : pre ? pre[0] : f.color}`;
 }
 const finishPic = (f) => ({ style: f.type === 'image' && f.img ? `background-image:url(${blobSrc(f.img.src)})` : `background:${f.color}` });
-const framesText = (z) => (FRAME_STYLES.find(([k]) => k === z.style) || ['', 'Mouldings'])[1] + (z.style === 'mould' && z.moulding ? ` · ${z.moulding.name}` : '');
+/* ---------- Mouldings: objects on the walls, alone or linked (app-data.js, Mouldings) ---------- */
+const curFrame = () => { const n = studio && studio.node; return n && n.startsWith('frame:') && studio.room ? studio.room.frames.find(f => f.id === n.slice(6)) || null : null; };
+const partOf = (r, f) => (r.walls[f.wall].layout === 'split' && f.v + f.h / 2 > Math.min(r.walls[f.wall].split, r.h) ? 'hi' : 'lo');
+/* The mouldings on a wall, or on one part of a split wall (key), left to right. */
+function framesOn(r, wid, key) {
+  const split = r.walls[wid].layout === 'split';
+  return r.frames.filter(f => f.wall === wid && (!split || !key || partOf(r, f) === key)).sort((a, b) => a.u - b.u || a.v - b.v);
+}
+const linkCount = (f) => studio.home.rooms.reduce((t, r) => t + r.frames.filter(g => g.link === f.link).length, 0);
+/* "Frame 2": its kind, and its place among the wall's mouldings from the left. */
+const frameName = (f, r = studio.room) => `${FRAME_NAMES[f.style]} ${framesOn(r, f.wall).indexOf(f) + 1}`;
+const frameSub = (f) => { const n = linkCount(f); return `${cm(f.w)} × ${cm(f.h)} cm${n > 1 ? ` · ${n} linked` : ''}`; };
+const frameNodes = (r, wid, key) => framesOn(r, wid, key).map(f => tnode('frame:' + f.id, { glyph: 'frames' }, frameName(f, r), frameSub(f))).join('');
+/* Its linked copies, in every room of the home, take its kind, size, moulding, colour and inside (their places stay their own). */
+function syncLinked(f) {
+  for (const r of studio.home.rooms) for (const g of r.frames) if (g !== f && g.link === f.link) copyLinked(f, g, r);
+}
+/* A copy of moulding f, linked to it or on its own, at the same height in the free stretch of its wall nearest to it: 10 cm clear of
+   the other mouldings and the windows and doors at that height. With no room left on the wall it sits 10 cm off the original, to be
+   dragged where it goes (fits: false). */
+function copyFrame(r, f, linked) {
+  const len = frameLen(r, f.wall), gap = 0.1, c = JSON.parse(JSON.stringify(f));
+  c.id = newId('f'); if (!linked) c.link = newId('k');
+  const at = (v0, v1) => v0 < f.v + f.h && v1 > f.v;
+  const busy = [...r.frames.filter(g => g.wall === f.wall && at(g.v, g.v + g.h)).map(g => [g.u, g.u + g.w]),
+    ...r.openings.filter(o => o.wall === f.wall && at(opV(o), opV(o) + o.h)).map(o => [o.off, o.off + o.w])];
+  // the nearest free place starts at a wall's end or just clear of something on it (a millimetre's slack: the place of one just
+  // removed, exactly its width and two gaps, still fits)
+  let best = null;
+  for (const u of [0, len - f.w, ...busy.flatMap(([a, b]) => [b + gap, a - gap - f.w])]) {
+    if (u < -0.001 || u > len - f.w + 0.001 || !busy.every(([a, b]) => u + f.w + gap <= a + 0.001 || u >= b + gap - 0.001)) continue;
+    if (best === null || Math.abs(u - f.u) < Math.abs(best - f.u)) best = clamp(u, 0, len - f.w);
+  }
+  const fits = best !== null;
+  c.u = fits ? best : clamp(f.u + gap, 0, Math.max(0, len - f.w));
+  r.frames.push(c);
+  return { c, fits };
+}
+/* Every finish in a room: its walls' and the insides of its mouldings. */
+const roomFinishes = (r) => [...WALL_IDS.flatMap(wid => [r.walls[wid].lo.f, r.walls[wid].hi.f]), ...r.frames.map(f => f.inner).filter(Boolean)];
 const railText = (cfg) => (RAIL_STYLES.find(([k]) => k === cfg.railStyle) || ['', 'Rail'])[1] + (cfg.railStyle === 'straight' && cfg.railM ? ` · ${cfg.railM.name}` : '');
 const opText = (o) => `${cm(o.w)} × ${cm(o.h)} cm, ${cm(o.off)} cm from the left`;
 /* A wall's finish: once when both parts of a split wall have the same one. */
@@ -1070,22 +1125,22 @@ function nodeSummary(n) {
   if (k === 'floor') return r.flooring ? r.flooring.name : FLOORS[r.floor][0];
   if (k === 'furniture') return r.items.length ? `${r.items.length} piece${r.items.length === 1 ? '' : 's'}` : 'None yet';
   if (k === 'op') { const o = r.openings.find(x => x.id === a); return o ? opText(o) : ''; }
+  if (k === 'wall') return cfg ? wallText(cfg) : '';
+  if (k === 'frame') { const f = curFrame(); return f ? frameSub(f) : ''; }
   if (!cfg) return '';
-  if (k === 'wall') return wallText(cfg);
   if (k === 'part') return cfg[b] ? finishText(cfg[b].f) : '';
-  if (k === 'frames') return cfg[b] ? framesText(cfg[b]) : '';
   if (k === 'rail') return railText(cfg);
   return '';
 }
-/* What hangs on a wall, as lines of the tree: its windows, doors and radiators, then its parts and their mouldings, then the rail. */
+/* What hangs on a wall, as lines of the tree: its windows, doors and radiators, then its parts and their mouldings (each its own
+   line), then the rail. */
 function wallKids(r, wid) {
   const cfg = r.walls[wid], split = cfg.layout === 'split', out = [];
   for (const o of r.openings.filter(x => x.wall === wid)) out.push(tnode('op:' + o.id, { glyph: o.kind }, OP_KINDS[o.kind], opText(o)));
-  const frames = (key) => (cfg[key].frames ? tnode(`frames:${wid}:${key}`, { glyph: 'frames' }, 'Mouldings and panels', framesText(cfg[key])) : '');
   if (split) for (const key of ['hi', 'lo']) {
     out.push(tnode(`part:${wid}:${key}`, finishPic(cfg[key].f), PART_NAMES[key], finishText(cfg[key].f)));
-    const f = frames(key); if (f) out.push(`<div class="tgroup">${f}</div>`);
-  } else if (cfg.lo.frames) out.push(frames('lo'));
+    const f = frameNodes(r, wid, key); if (f) out.push(`<div class="tgroup">${f}</div>`);
+  } else out.push(frameNodes(r, wid));
   if (split && cfg.rail) out.push(tnode('rail:' + wid, { glyph: 'rail' }, 'Rail', railText(cfg)));
   return out.join('');
 }
@@ -1110,7 +1165,7 @@ function roomTree() {
 function nodeParent(n) {
   const [k, a, b] = n.split(':'), r = studio.room;
   if (k === 'op') { const o = r.openings.find(x => x.id === a); return o ? 'wall:' + o.wall : null; }
-  if (k === 'frames') return r.walls[a].layout === 'split' ? `part:${a}:${b}` : 'wall:' + a;
+  if (k === 'frame') { const f = r.frames.find(x => x.id === a); return f ? (r.walls[f.wall].layout === 'split' ? `part:${f.wall}:${partOf(r, f)}` : 'wall:' + f.wall) : null; }
   if (k === 'part' || k === 'rail') return 'wall:' + a;
   return null;
 }
@@ -1119,7 +1174,7 @@ function nodeName(n) {
   if (k === 'room') return 'Name and size';     // the crumb above it already says the room's name
   if (k === 'wall') return WALL_NAMES[a];
   if (k === 'part') return `${PART_NAMES[b]} of the ${WALL_NAMES[a].toLowerCase()}`;
-  if (k === 'frames') return 'Mouldings and panels';
+  if (k === 'frame') { const f = r.frames.find(x => x.id === a); return f ? frameName(f) : ''; }
   if (k === 'op') { const o = r.openings.find(x => x.id === a); return o ? OP_KINDS[o.kind] : ''; }
   return { floor: 'Floor', furniture: 'Furniture', rail: 'Rail' }[k] || '';
 }
@@ -1128,12 +1183,12 @@ function validNode(n) {
   if (!n) return null;
   const [k, a, b] = n.split(':'), r = studio.room;
   if (k === 'op') return r.openings.some(o => o.id === a) ? n : null;
-  if (!['part', 'frames', 'rail', 'wall'].includes(k)) return n;
+  if (k === 'frame') return r.frames.some(f => f.id === a) ? n : null;
+  if (!['part', 'rail', 'wall'].includes(k)) return n;
   if (!r.walls[a]) return null;
   const split = r.walls[a].layout === 'split';
   if (k === 'part') return split ? n : 'wall:' + a;
   if (k === 'rail') return split && r.walls[a].rail ? n : 'wall:' + a;
-  if (k === 'frames') { const key = split ? b : 'lo'; return r.walls[a][key].frames ? `frames:${a}:${key}` : split ? `part:${a}:${b}` : 'wall:' + a; }
   return n;
 }
 function setNode(n) {
@@ -1141,16 +1196,17 @@ function setNode(n) {
   n = r ? validNode(n) : null;
   st.node = n;
   if (!n) return;
-  const [k, a, b] = n.split(':'), wid = k === 'op' ? r.openings.find(o => o.id === a).wall : r.walls[a] ? a : null;
-  if (wid) { st.wall = wid; st.part = r.walls[wid].layout !== 'split' ? 'lo' : b === 'hi' || b === 'lo' ? b : st.part || 'hi'; }
+  const [k, a, b] = n.split(':'), fr = k === 'frame' && r.frames.find(f => f.id === a);
+  const wid = k === 'op' ? r.openings.find(o => o.id === a).wall : fr ? fr.wall : r.walls[a] ? a : null;
+  if (wid) { st.wall = wid; st.part = r.walls[wid].layout !== 'split' ? 'lo' : fr ? partOf(r, fr) : b === 'hi' || b === 'lo' ? b : st.part || 'hi'; }
 }
 function goNode(n) { setNode(n); studio.tab = 'room'; renderPane(); $('pane').scrollTop = 0; }
 function nodePage() {
   const n = studio.node, [k, a, b] = n.split(':'), par = nodeParent(n), r = studio.room;
-  const sub = k === 'op' ? `On the ${WALL_NAMES[studio.wall].toLowerCase()}` : k === 'frames' ? `On the ${WALL_NAMES[a].toLowerCase()}${r.walls[a].layout === 'split' ? ', ' + PART_NAMES[b].toLowerCase() : ''}`
+  const sub = k === 'op' ? `On the ${WALL_NAMES[studio.wall].toLowerCase()}` : k === 'frame' ? `On the ${WALL_NAMES[studio.wall].toLowerCase()}${r.walls[studio.wall].layout === 'split' ? ', ' + PART_NAMES[studio.part].toLowerCase() : ''}`
     : k === 'wall' ? `${cm(wallLen(a))} cm long` : k === 'rail' ? `Along the ${WALL_NAMES[a].toLowerCase()}, ${cm(Math.min(r.walls[a].split, r.h))} cm up` : '';
   const body = k === 'room' ? roomEditor() : k === 'floor' ? floorNote(r) : k === 'furniture' ? furnitureEditor() : k === 'wall' ? wallEditor(a)
-    : k === 'part' ? partEditor(a, b) : k === 'frames' ? framesEditor(a, b) : k === 'rail' ? railEditor(a) : opEditor(a);
+    : k === 'part' ? partEditor(a, b) : k === 'frame' ? frameEditor(a) : k === 'rail' ? railEditor(a) : opEditor(a);
   return `<div class="node-top"><button type="button" class="crumb" data-act="nodeback"><span aria-hidden="true">‹</span> <span data-fill="${fills.push(par ? nodeName(par) : r.name) - 1}"></span></button>
     <h3 class="node-h" data-fill="${fills.push(nodeName(n)) - 1}"></h3>${sub ? `<p class="note">${sub}</p>` : ''}</div>${body}`;
 }
@@ -1191,13 +1247,13 @@ function shopping(home) {
     const g = groups.get(k) || { p: it.p, n: 0 }; g.n++; groups.set(k, g);
   }
   const papers = new Map();
-  for (const r of rooms) for (const wid of WALL_IDS) for (const z of [r.walls[wid].lo, r.walls[wid].hi]) for (const f of [z.f, z.inner]) if (f && f.type === 'image' && f.img && f.img.ref) papers.set(f.img.ref, f.img);
+  for (const r of rooms) for (const f of roomFinishes(r)) if (f.type === 'image' && f.img && f.img.ref) papers.set(f.img.ref, f.img);
   const paperRows = [...papers.values()].map(img => ({ img, plan: paperPlan(rooms, img) })).filter(x => x.plan.uses.length);
   const paints = new Map();
-  for (const r of rooms) for (const wid of WALL_IDS) for (const z of [r.walls[wid].lo, r.walls[wid].hi]) for (const f of [z.f, z.inner]) { for (const m of [f && f.paint, f && f.type === 'image' && f.base]) if (m && !paints.has(paintKey(m))) paints.set(paintKey(m), m); }   // the first wall names the line
+  for (const r of rooms) for (const f of roomFinishes(r)) { for (const m of [f.paint, f.type === 'image' && f.base]) if (m && !paints.has(paintKey(m))) paints.set(paintKey(m), m); }   // the first wall names the line
   const paintRows = [...paints.values()].map(paint => ({ paint, plan: paintPlan(rooms, paint) })).filter(x => x.plan.tins);
   const moulds = new Map();
-  for (const r of rooms) for (const wid of WALL_IDS) { const w = r.walls[wid]; for (const m of [w.railM, w.lo.moulding, w.hi.moulding]) if (m) moulds.set(m.ref, m); }
+  for (const r of rooms) { for (const wid of WALL_IDS) if (r.walls[wid].railM) moulds.set(r.walls[wid].railM.ref, r.walls[wid].railM); for (const f of r.frames) if (f.style === 'mould' && f.moulding) moulds.set(f.moulding.ref, f.moulding); }
   const mouldRows = [...moulds.values()].map(m => ({ m, plan: mouldingPlan(rooms, m) })).filter(x => x.plan.strips);
   const floors = new Map();
   for (const r of rooms) if (r.flooring && !floors.has(r.flooring.ref)) floors.set(r.flooring.ref, r.flooring);     // the first room names the line
@@ -1247,7 +1303,7 @@ function fillListNames() {
 }
 
 /* ---------- Walls ---------- */
-const finOf = (z, slot) => (slot === 'in' ? z.inner : z.f);
+const finOf = (z, slot) => (slot === 'in' ? (curFrame() || {}).inner : z.f);      // 'in': the inside of the moulding whose page is open
 function zoneOf() { const cfg = studio.room.walls[studio.wall]; return cfg[cfg.layout === 'split' ? studio.part : 'lo']; }
 function swatchRow(act, current, slot, withAuto) {
   return `<div class="swatches">${withAuto ? `<button type="button" class="btn small" data-act="${act}" data-slot="${slot || ''}" data-v="" aria-pressed="${!current}">Auto</button>` : ''}${PRESETS.map(([n, c]) => `<button type="button" class="dot" data-act="${act}" data-slot="${slot || ''}" data-v="${c}" title="${n}" aria-label="${n}" aria-pressed="${(current || '').toLowerCase() === c}" style="background:${c}"></button>`).join('')}
@@ -1256,7 +1312,7 @@ function swatchRow(act, current, slot, withAuto) {
 function wallpapers() {
   const shopWp = allProducts().filter(p => p.kind === 'wallpaper' && p.wallpaper && p.wallpaper.tile);
   const mine = new Map();
-  for (const r of [studio.home, ...S.drafts.values()].flatMap(h => h.rooms)) for (const wid of WALL_IDS) for (const z of [r.walls[wid].lo, r.walls[wid].hi]) for (const f of [z.f, z.inner]) if (f && f.img && !f.img.ref) mine.set(f.img.src, f.img);
+  for (const r of [studio.home, ...S.drafts.values()].flatMap(h => h.rooms)) for (const f of roomFinishes(r)) if (f.img && !f.img.ref) mine.set(f.img.src, f.img);
   return { shopWp, mine: [...mine.values()] };
 }
 function finishEditor(f, slot, title) {
@@ -1297,9 +1353,9 @@ function mouldPick(act, cur, label) {
 }
 /* What can be added to a wall or a part of it, as buttons under its lines. */
 function addRow(wid, key) {
-  const cfg = studio.room.walls[wid], split = cfg.layout === 'split', b = (act, v, label, extra = '') => `<button type="button" class="btn small" data-act="${act}" data-v="${v}" data-wall="${wid}" ${extra}>${label}</button>`;
+  const cfg = studio.room.walls[wid], split = cfg.layout === 'split', b = (act, v, label, extra = '') => `<button type="button" class="btn small${extra.includes('data-danger') ? ' danger' : ''}" data-act="${act}" data-v="${v}" data-wall="${wid}" ${extra}>${label}</button>`;
   const here = key ? [] : Object.entries(OP_KINDS).map(([k, n]) => b('opadd', k, 'Add ' + n.toLowerCase()));
-  if ((key || !split) && !cfg[key || 'lo'].frames) here.push(b('framesadd', key || 'lo', 'Add mouldings or panels'));
+  if (key || !split) here.push(framesOn(studio.room, wid, key).length ? b('framesdel', key || 'lo', 'Remove the mouldings', 'data-danger="1"') : b('framesadd', key || 'lo', 'Add mouldings or panels'));
   if (!key && split && !cfg.rail) here.push(b('railadd', '', 'Add a rail'));
   return here.length ? `<div class="addrow">${here.join('')}</div>` : '';
 }
@@ -1308,7 +1364,7 @@ function wallEditor(wid) {
   const r = studio.room, cfg = r.walls[wid], split = cfg.layout === 'split', z = cfg.lo, kids = wallKids(r, wid);
   return `<div class="pair"><button type="button" class="btn small" data-act="wallzoom">Zoom to this wall</button><button type="button" class="btn small" data-act="wallroom">Whole room</button></div>
     <div class="seg wide" role="group" aria-label="Layout"><button type="button" data-act="layout" data-v="whole" aria-pressed="${!split}">One part</button><button type="button" data-act="layout" data-v="split" aria-pressed="${split}">Split in two</button></div>
-    ${split ? numField('Split height', 'split', cm(cfg.split), 'min="20" max="400" step="1"') : `${finishEditor(z.f, 'f', 'Finish')}${paperNote(z)}${baseNote(z)}${paintNote(z)}`}
+    ${split ? numField('Split height', 'split', cm(cfg.split), 'min="20" max="400" step="1"') : `${finishEditor(z.f, 'f', 'Finish')}${paperNote(z.f)}${baseNote(z.f, 'f')}${paintNote(z.f)}`}
     <div class="sec-h">On this wall</div>
     ${kids ? `<div class="tree">${kids}</div>` : '<p class="note">Nothing yet.</p>'}
     ${addRow(wid)}
@@ -1316,22 +1372,24 @@ function wallEditor(wid) {
 }
 /* One part of a split wall: its finish and its mouldings. */
 function partEditor(wid, key) {
-  const z = studio.room.walls[wid][key];
-  return `${finishEditor(z.f, 'f', 'Finish')}${paperNote(z)}${baseNote(z)}${paintNote(z)}
-    ${z.frames ? `<div class="sec-h">On this part</div><div class="tree">${tnode(`frames:${wid}:${key}`, { glyph: 'frames' }, 'Mouldings and panels', framesText(z))}</div>` : ''}
+  const z = studio.room.walls[wid][key], fr = frameNodes(studio.room, wid, key);
+  return `${finishEditor(z.f, 'f', 'Finish')}${paperNote(z.f)}${baseNote(z.f, 'f')}${paintNote(z.f)}
+    ${fr ? `<div class="sec-h">On this part</div><div class="tree">${fr}</div>` : ''}
     ${addRow(wid, key)}`;
 }
-/* Mouldings or panels on a wall or a part of it: their kind, moulding, colour, how many and how big, and what's inside them. */
-function framesEditor(wid, key) {
-  const z = studio.room.walls[wid][key], pn = panelNow(wid, key);
-  return `<div class="seg wide" role="group" aria-label="Kind of panel">${FRAME_STYLES.map(([k, n]) => `<button type="button" data-act="fstyle" data-v="${k}" aria-pressed="${z.style === k}">${n}</button>`).join('')}</div>
-    ${z.style === 'mould' ? mouldPick('pmould', z.moulding, 'Moulding') : ''}
-    <span class="note">${z.style === 'soft' || z.style === 'tops' ? 'Panel colour' : 'Moulding colour'}</span>${swatchRow('mould', z.mould, '', true)}
-    <div class="fields">${numField('Panels', 'pcount', pn.n, 'min="1" max="24" step="1"', '')}${numField('Width', 'pwidth', cm(pn.w), 'min="5" max="400" step="1"')}${numField('Height', 'pheight', cm(pn.h), 'min="10" max="400" step="1"')}${numField('Separation', 'pgap', cm(pn.gap), 'min="0" max="100" step="1"')}${numField('Padding', 'ppad', cm(pn.pad), 'min="3" max="200" step="1"')}</div>
-    <p class="note">Padding is the space at the ends of the wall and around windows and doors. A new width keeps the number and separation and moves the padding; the other values keep the rest and change the width. The height stays centred.${pn.uneven ? ' Panels beside a window or door get their own width to fill their stretch.' : ''}</p>
-    ${z.style !== 'soft' ? `<div class="seg wide" role="group" aria-label="Inside"><button type="button" data-act="inner" data-v="same" aria-pressed="${!z.inner}">${z.style === 'tops' ? 'Plain colour' : 'Same as the wall'}</button><button type="button" data-act="inner" data-v="own" aria-pressed="${!!z.inner}">Its own finish</button></div>` : ''}
-    ${z.inner && z.style !== 'soft' ? finishEditor(z.inner, 'in', z.style === 'tops' ? 'Panel finish' : 'Inside the frames') : ''}
-    <div><button type="button" class="btn small danger" data-act="framesdel" data-v="${key}" data-wall="${wid}">Remove the mouldings</button></div>`;
+/* One moulding: what it is and how big (shared with the copies linked to it), where it is (its own), what's inside it, and copies. */
+function frameEditor(id) {
+  const f = curFrame(); if (!f) return '';
+  const n = linkCount(f), soft = f.style === 'soft';
+  return `<div class="seg wide" role="group" aria-label="Kind">${FRAME_STYLES.map(([k, nm]) => `<button type="button" data-act="kstyle" data-v="${k}" aria-pressed="${f.style === k}">${nm}</button>`).join('')}</div>
+    ${f.style === 'mould' ? mouldPick('fmould', f.moulding, 'Moulding') : ''}
+    <span class="note">${soft || f.style === 'tops' ? 'Panel colour' : 'Moulding colour'}</span>${swatchRow('kcolor', f.mould, '', true)}
+    <div class="fields two">${numField('Width', 'kdim', cm(f.w), 'data-k="w" min="5" max="1500" step="1"')}${numField('Height', 'kdim', cm(f.h), 'data-k="h" min="5" max="500" step="1"')}
+      ${numField('From the left', 'kpos', cm(f.u), 'data-k="u" min="0" max="1500" step="1"')}${numField('From the floor', 'kpos', cm(f.v), 'data-k="v" min="0" max="500" step="1"')}</div>
+    ${!soft ? `<div class="seg wide" role="group" aria-label="Inside"><button type="button" data-act="kinner" data-v="same" aria-pressed="${!f.inner}">${f.style === 'tops' ? 'Plain colour' : 'Same as the wall'}</button><button type="button" data-act="kinner" data-v="own" aria-pressed="${!!f.inner}">Its own finish</button></div>` : ''}
+    ${f.inner && !soft ? finishEditor(f.inner, 'in', f.style === 'tops' ? 'Panel finish' : 'Inside the frame') + paperNote(f.inner) + baseNote(f.inner, 'in') + paintNote(f.inner) : ''}
+    <p class="note">${n > 1 ? `Linked with ${n - 1} other${n === 2 ? '' : 's'}: its kind, moulding, colour, size and inside are theirs too, so a change here changes them all; its place is its own. ` : ''}“From the left” is measured facing the wall. You can also drag it in the room, along this wall or onto another.</p>
+    <div class="addrow"><button type="button" class="btn small" data-act="kdup">Duplicate</button><button type="button" class="btn small" data-act="klink">Linked copy</button>${n > 1 ? '<button type="button" class="btn small" data-act="kunlink">Unlink</button>' : ''}<button type="button" class="btn small danger" data-act="kdel">Remove</button></div>`;
 }
 /* The rail where a split wall changes finish: its shape, moulding and colour. */
 function railEditor(wid) {
@@ -1358,14 +1416,7 @@ function mouldingPieces(rooms, m) {
   for (const r of rooms) for (const wid of WALL_IDS) {
     const cfg = r.walls[wid], len = wid === 'back' || wid === 'front' ? r.w : r.l;
     const blocks = r.openings.filter(o => o.wall === wid).map(o => ({ u0: o.off, u1: o.off + o.w, v0: o.kind === 'door' ? 0 : o.y, v1: (o.kind === 'door' ? 0 : o.y) + o.h }));
-    for (const key of cfg.layout === 'split' ? ['lo', 'hi'] : ['lo']) {
-      const z = cfg[key];
-      if (!z.frames || z.style !== 'mould' || !z.moulding || z.moulding.ref !== m.ref) continue;
-      const [v0, v1] = frameSpan(cfg, key, r.h); if (v1 - v0 < 0.15) continue;
-      const bl = blocks.filter(o => o.v0 < v1 && o.v1 > v0);
-      const cols = (z.panels || autoColumns(len, blocks, v0, v1, z.panelW)).filter(c => c.u + c.w <= len + 0.001 && !bl.some(o => c.u < o.u1 + 0.02 && c.u + c.w > o.u0 - 0.02));
-      for (const c of cols) pieces.push(c.w + m.face, c.w + m.face, v1 - v0 + m.face, v1 - v0 + m.face);
-    }
+    for (const f of r.frames) if (f.wall === wid && f.style === 'mould' && f.moulding && f.moulding.ref === m.ref) pieces.push(f.w + m.face, f.w + m.face, f.h + m.face, f.h + m.face);
     if (cfg.layout === 'split' && cfg.rail && cfg.railStyle === 'straight' && cfg.railM && cfg.railM.ref === m.ref && cfg.split < r.h - 0.03) {
       const y = cfg.split;
       let cur = 0;
@@ -1393,26 +1444,22 @@ function mouldingPlan(rooms, m) {
 /* Litres of a shop's paint across the whole room: wall area (minus windows and doors) × coats ÷ coverage, in whole tins. */
 function paintPlan(rooms, paint) {
   let area = 0;
-  for (const r of rooms) for (const wid of WALL_IDS) {
-    const cfg = r.walls[wid], len = wid === 'back' || wid === 'front' ? r.w : r.l;
-    const blocks = r.openings.filter(o => o.wall === wid).map(o => ({ u0: o.off, u1: o.off + o.w, v0: o.kind === 'door' ? 0 : o.y, v1: (o.kind === 'door' ? 0 : o.y) + o.h }));
-    const parts = cfg.layout === 'split' ? [['lo', 0, Math.min(cfg.split, r.h)], ['hi', Math.min(cfg.split, r.h), r.h]] : [['lo', 0, r.h]];
-    for (const [key, z0, z1] of parts) {
-      const z = cfg[key], uses = (f) => f && (f.type === 'image' ? f.base : (f.type === 'paint' || f.type === 'panel') && f.paint) && paintKey(f.type === 'image' ? f.base : f.paint) === paintKey(paint);
-      if (uses(z.f)) area += wallPartArea(r, wid, z0, z1);
-      if (z.frames && z.style !== 'soft' && uses(z.inner)) {
-        const [v0, v1] = frameSpan(cfg, key, r.h);
-        if (v1 - v0 >= 0.15) for (const c of (z.panels || autoColumns(len, blocks, v0, v1, z.panelW))) area += c.w * (v1 - v0);
-      }
+  const uses = (f) => f && (f.type === 'image' ? f.base : (f.type === 'paint' || f.type === 'panel') && f.paint) && paintKey(f.type === 'image' ? f.base : f.paint) === paintKey(paint);
+  for (const r of rooms) {
+    for (const wid of WALL_IDS) {
+      const cfg = r.walls[wid];
+      const parts = cfg.layout === 'split' ? [['lo', 0, Math.min(cfg.split, r.h)], ['hi', Math.min(cfg.split, r.h), r.h]] : [['lo', 0, r.h]];
+      for (const [key, z0, z1] of parts) if (uses(cfg[key].f)) area += wallPartArea(r, wid, z0, z1);
     }
+    for (const f of r.frames) if (f.style !== 'soft' && uses(f.inner)) area += f.w * f.h;      // the inside of a moulding
   }
   const litres = area * paint.coats / paint.coverage, tins = area > 0.01 ? Math.ceil(litres / paint.tinL - 1e-6) : 0;
   const fmt = (v) => v.toLocaleString(undefined, { maximumFractionDigits: 1 });
   return { area, litres, tins, cost: paint.price !== null ? tins * paint.price : null,
     text: `${tins} tin${tins === 1 ? '' : 's'} of ${fmt(paint.tinL)} L · ${fmt(litres)} L for ${fmt(area)} m², ${paint.coats} coat${paint.coats === 1 ? '' : 's'}` };
 }
-function paintNote(z) {
-  const paint = [z.f, z.inner].map(f => f && (f.type === 'paint' || f.type === 'panel') && f.paint).find(Boolean);
+function paintNote(f) {
+  const paint = f && (f.type === 'paint' || f.type === 'panel') && f.paint;
   if (!paint) return '';
   const plan = paintPlan(studio.home.rooms, paint);
   return `<div class="finish"><div class="fin-h">How much paint</div><div>${plan.text}</div>${plan.cost !== null ? `<div class="price">${euro(plan.cost)}</div>` : ''}<p class="note">Across the whole home, windows and doors left out. Coverage and tin size from the shop.</p></div>`;
@@ -1420,10 +1467,9 @@ function paintNote(z) {
 /* Paint on the wall before the paper goes up. Any paint unless a shop's is picked: one coat, 10 m² a litre, 4 L tins.
    Walls papered over the same base paint add up, like any other paint. */
 const anyBase = (coats = 1) => cleanPaint({ ref: 'base:any', name: 'Paint under the wallpaper', tinL: 4, coverage: 10, coats });
-function baseNote(z) {
-  const slot = z.f && z.f.type === 'image' ? 'f' : z.inner && z.inner.type === 'image' && z.frames && z.style !== 'soft' ? 'in' : null;
-  if (!slot) return '';
-  const f = finOf(z, slot), b = f.base;
+function baseNote(f, slot) {
+  if (!f || f.type !== 'image') return '';
+  const b = f.base;
   const box = `<label class="check"><input type="checkbox" data-act="fbase" data-slot="${slot}" ${b ? 'checked' : ''}><span>Paint the wall before papering</span></label>`;
   if (!b) return `<div class="finish">${box}</div>`;
   const paints = allProducts().filter(p => p.kind === 'paint' && !(p.paint && p.paint.mix)), plan = paintPlan(studio.home.rooms, b), own = b.ref !== 'base:any';
@@ -1435,8 +1481,8 @@ function baseNote(z) {
     <div>${plan.text}</div>${plan.cost !== null ? `<div class="price">${euro(plan.cost)}</div>` : ''}
     <p class="note">Across the whole home, on every wall papered with this base, windows and doors left out. ${own ? 'Coverage and tin size from the shop.' : `Any paint: 10 m² a litre and 4 L tins assumed${paints.length ? '; pick a shop’s paint for its own coverage and price' : ''}.`}</p></div>`;
 }
-function paperNote(z) {
-  const img = [z.f, z.inner].map(f => f && f.type === 'image' && f.img).find(Boolean);
+function paperNote(f) {
+  const img = f && f.type === 'image' && f.img;
   if (!img) return '';
   const plan = paperPlan(studio.home.rooms, img);
   return `<div class="finish"><div class="fin-h">How much paper</div><div>${plan.text}</div>${plan.cost !== null ? `<div class="price">${euro(plan.cost)}</div>` : ''}<p class="note">Across the whole home. ${img.ref ? 'Roll size from the shop.' : 'For your own image, rolls of 53 cm × 10.05 m are assumed.'}</p></div>`;
@@ -1478,32 +1524,11 @@ function floorNote(r) {
     <p class="note">Across the whole home${many ? ', in every room with this floor' : ''}. ${fl.pack ? 'Pack size from the shop.' : 'Sold by the m².'}${SURFACE_LOOK[fl.surface][2] ? ' Laying it diagonally or in herringbone? Add 15% or more.' : ''}</p>
     ${many ? '<button type="button" class="btn small" data-act="floorall">Use this floor in every room</button>' : ''}</div>`;
 }
-function spreadPanels(wid, count, key, opt) {
-  const cfg = studio.room.walls[wid], [v0, v1] = frameSpan(cfg, key, H);
-  return autoColumns(wallLen(wid), wallBlocks(wid), v0, v1, cfg[key].panelW, count, opt);
-}
-/* The panels of one part as the fields show them: how many, how wide and high, how far apart, and the padding before the first. */
-function panelNow(wid, key) {
-  const z = studio.room.walls[wid][key], cols = z.panels || spreadPanels(wid, undefined, key), [v0, v1] = frameSpan(studio.room.walls[wid], key, H);
-  let gap = Infinity;
-  for (let i = 1; i < cols.length; i++) gap = Math.min(gap, cols[i].u - cols[i - 1].u - cols[i - 1].w);      // the smallest step: across a window it's wider
-  return { n: cols.length, w: cols.length ? cols[0].w : 0, h: v1 - v0, pad: cols.length ? cols[0].u : 0.12, gap: isFinite(gap) ? gap : z.gap ?? 0.1,
-    uneven: cols.some(c => Math.abs(c.w - cols[0].w) > 0.005) };
-}
-/* Lay the panels out again with some values changed and the rest kept. Changing the width keeps the number and the separation
-   and moves the padding; changing anything else keeps the other two and the width follows. Returns false if they don't fit. */
-function relayPanels(wid, key, o) {
-  const z = studio.room.walls[wid][key], cur = panelNow(wid, key), gap = o.gap ?? cur.gap;
-  const cols = spreadPanels(wid, o.n ?? cur.n, key, o.w ? { gap, w: o.w } : { pad: o.pad ?? cur.pad, gap });
-  if (!cols.length || cols.some(c => c.w < 0.05)) return false;
-  z.panels = cols.map(({ u, w }) => ({ u, w })); z.gap = gap;
-  return true;
-}
 /* Strips of roll width; shorter where a window or door takes the whole strip; 10 cm to trim; rounded up to the repeat. */
 function paperPlan(rooms, img) {
   const rw = img.rollW / 100, rl = img.rollL / 100, rep = img.mural ? 0 : img.width * img.aspect / 100, trim = 0.1;
   const cutLen = (h) => (rep > 0.01 ? Math.ceil((h + trim) / rep - 1e-6) * rep : h + trim);
-  const uses = [], pieces = [], slivers = [];
+  const uses = [], pieces = [], slivers = [], same = (f) => f && f.type === 'image' && f.img && (img.ref ? f.img.ref === img.ref : f.img.src === img.src);
   let area = 0, order = 0;
   for (const r of rooms) for (const wid of WALL_IDS) {
     const cfg = r.walls[wid], len = wid === 'back' || wid === 'front' ? r.w : r.l;
@@ -1511,7 +1536,7 @@ function paperPlan(rooms, img) {
     const holes = r.openings.filter(o => o.wall === wid && o.kind !== 'radiator').map(box2), blocks = r.openings.filter(o => o.wall === wid).map(box2);
     const parts = cfg.layout === 'split' ? [['lo', 0, Math.min(cfg.split, r.h)], ['hi', Math.min(cfg.split, r.h), r.h]] : [['lo', 0, r.h]];
     for (const [key, z0, z1] of parts) {
-      const z = cfg[key], same = (f) => f && f.type === 'image' && f.img && (img.ref ? f.img.ref === img.ref : f.img.src === img.src);
+      const z = cfg[key];
       if (same(z.f) && z1 - z0 > 0.01) {
         uses.push(wid); order += (len + 0.1) * (z1 - z0 + 0.1);
         for (let u = 0; u < len - 0.005; u += rw) {
@@ -1521,18 +1546,14 @@ function paperPlan(rooms, img) {
           for (const [s0, s1] of spans) { area += (b - a) * (s1 - s0); pieces.push(cutLen(s1 - s0)); }
         }
       }
-      if (z.frames && z.style !== 'soft' && same(z.inner)) {
-        const [v0, v1] = frameSpan(cfg, key, r.h); if (v1 - v0 < 0.15) continue;
-        const bl = blocks.filter(o => o.v0 < v1 && o.v1 > v0);
-        const cols = (z.panels || autoColumns(len, blocks, v0, v1, z.panelW)).filter(c => c.u + c.w <= len + 0.001 && !bl.some(o => c.u < o.u1 + 0.02 && c.u + c.w > o.u0 - 0.02));
-        if (cols.length) uses.push(wid);
-        for (const c of cols) {
-          const h = v1 - v0, full = Math.floor(c.w / rw + 1e-3), rest = c.w - full * rw;
-          area += c.w * h; order += (c.w + 0.1) * (h + 0.1);
-          for (let k = 0; k < full; k++) pieces.push(cutLen(h));
-          if (rest > 0.01) slivers.push({ w: rest, len: cutLen(h) });
-        }
-      }
+    }
+    const inside = r.frames.filter(f => f.wall === wid && f.style !== 'soft' && same(f.inner));       // papered inside a moulding
+    if (inside.length) uses.push(wid);
+    for (const f of inside) {
+      const full = Math.floor(f.w / rw + 1e-3), rest = f.w - full * rw;
+      area += f.w * f.h; order += (f.w + 0.1) * (f.h + 0.1);
+      for (let k = 0; k < full; k++) pieces.push(cutLen(f.h));
+      if (rest > 0.01) slivers.push({ w: rest, len: cutLen(f.h) });
     }
   }
   slivers.sort((a, b) => b.w - a.w);
@@ -1583,10 +1604,14 @@ async function paneEvent(e) {
   // the tree: open a line, go back up, add or remove what hangs on a wall
   if (act === 'node') { goNode(t.dataset.v); return; }
   if (act === 'nodeback') { goNode(studio.node && nodeParent(studio.node)); return; }
-  if (act === 'framesadd' || act === 'framesdel') {
+  if (act === 'framesadd' || act === 'framesdel') {         // a part filled with mouldings, linked to one another; or all of them taken off
     const w = t.dataset.wall, key = t.dataset.v, cfg = r.walls[w]; if (!cfg || !cfg[key]) return;
-    cfg[key].frames = act === 'framesadd'; changed(true);
-    goNode(act === 'framesadd' ? `frames:${w}:${key}` : cfg.layout === 'split' ? `part:${w}:${key}` : 'wall:' + w); return;
+    const split = cfg.layout === 'split', back = split ? `part:${w}:${key}` : 'wall:' + w;
+    if (act === 'framesdel') { const gone = new Set(framesOn(r, w, split ? key : null)); r.frames = r.frames.filter(f => !gone.has(f)); goNode(back); changed(true); return; }
+    const added = fillFrames(r, w, key, { style: 'mould' });
+    if (!added.length) { toast('There’s no room for mouldings on this part of the wall.'); return; }
+    r.frames.push(...added); goNode(back); changed(true);
+    toast(added.length > 1 ? `${added.length} mouldings added, linked: change one and they all change.` : 'A moulding added.'); return;
   }
   if (act === 'railadd' || act === 'raildel') {
     const w = t.dataset.wall; if (!r.walls[w]) return;
@@ -1616,6 +1641,8 @@ async function paneEvent(e) {
     copy.id = newId('room'); copy.name = copyName(r.name, studio.home.rooms.map(x => x.name));
     for (const o of copy.openings) o.id = newId('o');
     for (const it of copy.items) it.id = newId('i');
+    const links = new Map();              // its mouldings stay linked among themselves, not to the original's
+    for (const f of copy.frames) { f.id = newId('f'); if (!links.has(f.link)) links.set(f.link, newId('k')); f.link = links.get(f.link); }
     placeCopy(studio.home, r, copy);
     studio.home.rooms.push(copy);
     changed(true); resetView(); focusRoom(copy.id);
@@ -1637,39 +1664,47 @@ async function paneEvent(e) {
   if (act === 'split' && type === 'change') { const v = +t.value / 100; if (v >= 0.2 && v <= r.h - 0.1) cfg.split = v; changed(true); rerender(); return; }
   if (act === 'railStyle') { cfg.railStyle = t.dataset.v; changed(true); rerender(); return; }
   if (act === 'pickmould') {              // a moulding no longer listed stays until another is picked
-    const which = t.dataset.v, was = which === 'pmould' ? z.moulding : cfg.railM;
-    pickMaterial({ kind: 'moulding', title: which === 'pmould' ? 'Moulding for the frames' : 'Rail moulding', cur: was && was.ref,
+    const which = t.dataset.v, fr = curFrame(), was = which === 'fmould' ? fr && fr.moulding : cfg.railM;
+    pickMaterial({ kind: 'moulding', title: which === 'fmould' ? 'Moulding for the frame' : 'Rail moulding', cur: was && was.ref,
       none: ['Any moulding, not from a shop', 'Nido draws a plain one and leaves it out of the shopping list'],
       onPick: (p) => {
         const m = p ? cleanMoulding({ ref: p.ref, name: p.name, shop: p.shop, url: p.url, price: p.price, ...p.moulding }) : null;
-        if (which === 'pmould') z.moulding = m; else cfg.railM = m;
+        if (which === 'fmould') { if (fr) fr.moulding = m; } else cfg.railM = m;
         changed(true); renderPane();
       } });
     return;
   }
   const hexVal = () => (t.dataset.hex ? (parseHex(t.value) || null) : t.tagName === 'INPUT' ? t.value : t.dataset.v);
   if (act === 'trim') { const h = hexVal(); if (!h && t.dataset.hex) return; cfg.trim = h || null; changed(true); if (type !== 'input') rerender(); return; }
-  if (act === 'mould') { const h = hexVal(); if (!h && t.dataset.hex && t.value) return; z.mould = h || null; changed(true); if (type !== 'input') rerender(); return; }
-  if (act === 'fstyle') { z.style = t.dataset.v; changed(true); rerender(); return; }
-  if (['pcount', 'pwidth', 'pgap', 'ppad', 'pheight'].includes(act)) {
-    if (type !== 'change') return;
-    const v = +t.value, m = v / 100;
-    const ok = act === 'pheight' ? (m >= 0.1 && m <= 4 ? ((z.panelH = m), true) : false)
-      : act === 'pcount' ? Number.isInteger(v) && v >= 1 && v <= 24 && relayPanels(wid, part, { n: v })
-      : act === 'pwidth' ? m >= 0.05 && m <= 4 && relayPanels(wid, part, { w: m })
-      : act === 'pgap' ? m >= 0 && m <= 1 && relayPanels(wid, part, { gap: m })
-      : m >= 0.03 && m <= 2 && relayPanels(wid, part, { pad: m });
-    if (!ok) toast('That doesn’t fit on this wall.');
-    else {
-      changed(true);
-      const now = panelNow(wid, part);
-      if (act === 'pwidth' && now.w < m - 0.005) toast(`The widest that fits is ${cm(now.w)} cm.`);
-      if (act === 'pheight' && now.h < m - 0.005) toast(`The tallest that fits is ${cm(now.h)} cm.`);
-    }
-    rerender(); return;
+  // a moulding: what it is and how big (its linked copies follow: changed() syncs them), where it is, copies of it
+  const fr = curFrame();
+  if (fr && act === 'kstyle') { fr.style = t.dataset.v; changed(true); rerender(); return; }
+  if (fr && act === 'kcolor') { const h = hexVal(); if (!h && t.dataset.hex && t.value) return; fr.mould = h || null; changed(true); if (type !== 'input') rerender(); return; }
+  if (fr && act === 'kinner') { fr.inner = t.dataset.v === 'own' ? (fr.inner || defaultFinish({ color: '#d9a195' })) : null; changed(true); rerender(); return; }
+  if (fr && (act === 'kdim' || act === 'kpos') && type === 'change') {
+    const v = +t.value / 100, k = t.dataset.k, len = frameLen(r, fr.wall);
+    if (!isFinite(v) || (act === 'kdim' && v < 0.05)) { rerender(); return; }
+    if (k === 'w') fr.w = Math.min(v, len); else if (k === 'h') fr.h = Math.min(v, r.h); else fr[k] = v;
+    fr.u = clamp(fr.u, 0, Math.max(0, len - fr.w)); fr.v = clamp(fr.v, 0, Math.max(0, r.h - fr.h));
+    changed(true); rerender(); return;
   }
-  if (act === 'inner') { z.inner = t.dataset.v === 'own' ? (z.inner || defaultFinish({ color: '#d9a195' })) : null; changed(true); rerender(); return; }
-  if (act === 'allwalls') { for (const w of WALL_IDS) if (w !== wid) r.walls[w] = JSON.parse(JSON.stringify(cfg)); changed(true); toast('All four walls now match this one.'); return; }
+  if (fr && (act === 'kdup' || act === 'klink')) {
+    const { c, fits } = copyFrame(r, fr, act === 'klink');
+    goNode('frame:' + c.id); changed(true);
+    toast(!fits ? 'No free room on this wall: the copy is on top of the original. Drag it where it goes.'
+      : act === 'klink' ? 'A linked copy, in the nearest free space: change one and they all change.' : 'A copy of its own, in the nearest free space.'); return;
+  }
+  if (fr && act === 'kunlink') { fr.link = newId('k'); changed(false); rerender(); toast('Unlinked: this one changes on its own now.'); return; }
+  if (fr && act === 'kdel') { const back = nodeParent(studio.node); r.frames = r.frames.filter(x => x !== fr); goNode(back); changed(true); return; }
+  if (act === 'allwalls') {              // the other walls take this one's finish and its mouldings, linked to these
+    const mine = r.frames.filter(f => f.wall === wid);
+    r.frames = mine.slice();
+    for (const w of WALL_IDS) if (w !== wid) {
+      r.walls[w] = JSON.parse(JSON.stringify(cfg));
+      for (const f of mine) { const c = JSON.parse(JSON.stringify(f)); c.id = newId('f'); c.wall = w; copyLinked(f, c, r); r.frames.push(c); }
+    }
+    changed(true); toast('All four walls now match this one.'); return;
+  }
   const f = t.dataset.slot ? finOf(z, t.dataset.slot) : null;
   if (!f) return;
   if (act === 'ftype') {

@@ -232,8 +232,8 @@ function makeWall(parent, wid) {
   const skirt = (u0, u1) => { if (u1 - u0 > 0.01) for (const grp of [full, cut]) put(grp, box(u1 - u0, 0.07, 0.012, M.base, false), (u0 + u1) / 2, 0.035, 0.006); };
   for (const o of ops.filter(o => o.v0 < 0.08).sort((a, b) => a.u0 - b.u0)) { skirt(cur, o.u0); cur = Math.max(cur, o.u1); }
   skirt(cur, len);
-  full.add(finishGroup(R.walls[wid], len, H, ops, blocks));
-  cut.add(finishGroup(R.walls[wid], len, CUT, ops, blocks));
+  full.add(finishGroup(R.walls[wid], len, H, ops, blocks, (R.frames || []).filter(f => f.wall === wid)));
+  cut.add(finishGroup(R.walls[wid], len, CUT, ops, blocks, []));
   for (const op of ops) {                       // each in its own group, so a tap finds the window or door, not the wall
     const og = tagOp(new THREE.Group(), op.o), oc = tagOp(new THREE.Group(), op.o);
     if (op.o.kind === 'window') { buildWindow(og, op); if (!op.o.pass) put(oc, box(op.u1 - op.u0, CUT + 0.006, T * 0.5, M.winPlan, false), (op.u0 + op.u1) / 2, (CUT + 0.006) / 2, -T / 2); }
@@ -698,14 +698,15 @@ wallSel.add(ghost(new THREE.Mesh(new THREE.PlaneGeometry(1, 1), wallFill)), ghos
 wallSel.visible = false; scene.add(wallSel);
 let selWall = null, wallFlash = 0;
 function showWall(m) {
-  const same = m && selWall && m.r.id === selWall.r.id && m.wid === selWall.wid && m.z0 === selWall.z0 && m.z1 === selWall.z1;
+  const same = m && selWall && m.r.id === selWall.r.id && m.wid === selWall.wid && m.z0 === selWall.z0 && m.z1 === selWall.z1 && m.u0 === selWall.u0 && m.u1 === selWall.u1;
   selWall = m;
   if (!m) return;
   if (!same) wallFlash = performance.now();       // a new pick flashes; editing the same wall doesn't
   const len = m.wid === 'back' || m.wid === 'front' ? m.r.w : m.r.l;
-  wallSel.position.copy(roomOffset(m.r).add(wallPointOf(m.r, m.wid, len / 2, (m.z0 + m.z1) / 2, 0.035)));   // in front of padded panels (3.2 cm)
+  const u0 = m.u0 ?? 0, u1 = m.u1 ?? len;                // m.u0, m.u1: just that stretch of it (a moulding)
+  wallSel.position.copy(roomOffset(m.r).add(wallPointOf(m.r, m.wid, (u0 + u1) / 2, (m.z0 + m.z1) / 2, 0.035)));   // in front of padded panels (3.2 cm)
   wallSel.rotation.y = frameOf(m.r, m.wid).rot;
-  wallSel.scale.set(len, m.z1 - m.z0, 1);
+  wallSel.scale.set(u1 - u0, m.z1 - m.z0, 1);
 }
 
 /* ---------- Picking and dragging: furniture inside its room; whole rooms in the plan ---------- */
@@ -713,7 +714,7 @@ const canvas = renderer.domElement;
 const ray = new THREE.Raycaster(), ndc = new THREE.Vector2(), floorPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), hit = new THREE.Vector3();
 let drag = null, down = null;
 const engineHooks = { onSelect: () => {}, onWall: () => {}, onChange: () => {}, onRoomTap: () => {}, onRoomMoved: () => {}, onToolTap: () => {}, onItemTap: () => {}, onBlankTap: () => {},
-  onOpening: () => {}, onOpMoved: () => {} };
+  onOpening: () => {}, onOpMoved: () => {}, onFrame: () => {}, onFrameMoved: () => {} };
 function aim(e) {
   const r = canvas.getBoundingClientRect();
   ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
@@ -725,10 +726,11 @@ function pick() {
   for (const h of ray.intersectObjects([homeGroup], true)) {
     if (!shown(h.object)) continue;
     let o = h.object;
-    while (o && !o.userData.itemId && !o.userData.opId && !o.userData.wallId && !o.userData.floor) o = o.parent;
+    while (o && !o.userData.itemId && !o.userData.opId && !o.userData.frameId && !o.userData.wallId && !o.userData.floor) o = o.parent;
     if (!o) continue;
     if (o.userData.itemId) return { item: o.userData.itemId, point: h.point };
     if (o.userData.opId) return { op: o.userData.opId, room: o.userData.roomId, point: h.point };
+    if (o.userData.frameId) return { frame: o.userData.frameId, room: o.userData.roomId, point: h.point };
     if (o.userData.wallId) return { wall: o.userData.wallId, room: o.userData.roomId };
     return { floor: o.userData.floor, point: h.point };
   }
@@ -851,12 +853,12 @@ canvas.addEventListener('pointerdown', (e) => {
     const f = findItem(p.item);
     drag = { id: p.item, pid: e.pointerId, ox: f.r.x + f.it.x - p.point.x, oz: f.r.z + f.it.z - p.point.z };
     floorPlane.constant = -p.point.y;
-  } else if (p.op && editable && focus === p.room) {           // a window, door or radiator: it slides along the walls
-    const r = roomById(p.room), o = r && r.openings.find(x => x.id === p.op);
-    if (!o) return;
-    const f = frameOf(r, o.wall), u = p.point.clone().sub(roomOffset(r).add(f.o)).dot(uDirOf(f.rot));
-    drag = { op: o.id, opRoom: r.id, pid: e.pointerId, du: o.off + o.w / 2 - u, dv: opV(o) + o.h / 2 - p.point.y, at: o.wall,   // where on it it was held
-      wall0: o.wall, cu0: o.off + o.w / 2, cv0: opV(o) + o.h / 2 };                                                            // and where it started
+  } else if ((p.op || p.frame) && editable && focus === p.room) {      // a window, door, radiator or moulding: it slides along the walls
+    const kind = p.op ? 'op' : 'frame', r = roomById(p.room), t = r && wallThing(r, kind, p.op || p.frame);
+    if (!t) return;
+    const f = frameOf(r, t.wall), u = p.point.clone().sub(roomOffset(r).add(f.o)).dot(uDirOf(f.rot));
+    drag = { kind, id: t.o.id, wroom: r.id, pid: e.pointerId, du: t.u + t.w / 2 - u, dv: t.v + t.h / 2 - p.point.y, at: t.wall,   // where on it it was held
+      wall0: t.wall, cu0: t.u + t.w / 2, cv0: t.v + t.h / 2 };                                                                  // and where it started
   } else if (p.floor && arranging) {
     const r = roomById(p.floor);
     drag = { room: r.id, pid: e.pointerId, ox: r.x - p.point.x, oz: r.z - p.point.z };
@@ -868,7 +870,7 @@ canvas.addEventListener('pointerdown', (e) => {
 canvas.addEventListener('pointermove', (e) => {
   aim(e);
   if (drag && e.pointerId === drag.pid) {
-    if (drag.op) { dragOpening(e); return; }
+    if (drag.kind) { dragThing(e); return; }
     if (!ray.ray.intersectPlane(floorPlane, hit)) return;
     if (drag.room) {
       const r = roomById(drag.room), s = snapRoom(r, hit.x + drag.ox, hit.z + drag.oz);
@@ -888,13 +890,13 @@ canvas.addEventListener('pointermove', (e) => {
   if (e.pointerType !== 'mouse') return;
   if (tool !== 'select') { canvas.style.cursor = 'crosshair'; return; }
   const p = pick();
-  canvas.style.cursor = p && editable && p.op && p.room === focus ? 'move' : p && (p.item || (editable && (p.wall || p.op))) ? 'pointer' : p && p.floor && editable && mode === 'plan' && !focus && HOME && HOME.rooms.length > 1 ? 'move' : 'grab';
+  canvas.style.cursor = p && editable && (p.op || p.frame) && p.room === focus ? 'move' : p && (p.item || (editable && (p.wall || p.op || p.frame))) ? 'pointer' : p && p.floor && editable && mode === 'plan' && !focus && HOME && HOME.rooms.length > 1 ? 'move' : 'grab';
 });
 function endDrag(e) {
   if (drag && e.pointerId === drag.pid) {
     const d = drag; drag = null; controls().enabled = true;
     try { canvas.releasePointerCapture(e.pointerId); } catch (er) {}
-    if (d.op) { if (d.moved) { opDirty = false; buildRoom(); engineHooks.onOpMoved(d.opRoom, d.op); down = null; return; } }
+    if (d.kind) { if (d.moved) { opDirty = false; buildRoom(); (d.kind === 'op' ? engineHooks.onOpMoved : engineHooks.onFrameMoved)(d.wroom, d.id); down = null; return; } }
     else if (d.moved && d.room) { buildRoom(); engineHooks.onRoomMoved(d.room, true); }
     else if (d.moved) engineHooks.onChange();
     if (d.moved) { down = null; return; }
@@ -908,15 +910,16 @@ function endDrag(e) {
     else if (!p || p.floor) { selectItem(null); engineHooks.onBlankTap(); }
     else if (p.item) engineHooks.onItemTap(p.item);         // selected on the way down; a tap (not a drag) also opens its panel
     else if (p.op) engineHooks.onOpening(p.room, p.op);
+    else if (p.frame) engineHooks.onFrame(p.room, p.frame);
   }
   down = null;
 }
-/* ---------- Windows, doors and radiators, dragged along the walls ----------
-   An opening follows the pointer over its room's walls: in 3D over the inner faces standing full height (walls cut away for the view
-   don't count), and on round a corner onto the next wall; in the plan along the wall nearest the pointer, any of the four. It stays
-   inside the wall, moves by the centimetre and settles in the middle when it comes within 4 cm of it. Windows and radiators move up
-   and down too; doors stand on the floor. The room is rebuilt once a frame while it moves (opDirty), and its distances to the
-   wall's ends, the floor and the ceiling show as it goes (drawDims). */
+/* ---------- Windows, doors, radiators and mouldings, dragged along the walls ----------
+   What hangs on a wall follows the pointer over its room's walls: in 3D over the inner faces standing full height (walls cut away for
+   the view don't count), and on round a corner onto the next wall; in the plan along the wall nearest the pointer, any of the four. It
+   stays inside the wall, moves by the centimetre and settles in the middle when it comes within 4 cm of it. It moves up and down too,
+   but a door stands on the floor. The room is rebuilt once a frame while it moves (opDirty), and its distances to the wall's ends,
+   the floor and the ceiling show as it goes (drawDims). */
 let opDirty = false;
 const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), tmpHit = new THREE.Vector3();
 function wallAt(r) {
@@ -942,17 +945,30 @@ function planWallAt(r, cur) {
   const f = frameOf(r, wid);
   return { wid, u: tmpHit.clone().sub(roomOffset(r).add(f.o)).dot(uDirOf(f.rot)), v: null };
 }
-/* Put opening o on wall wid with its middle at (cu, cv) in that wall's measures (cv null: it keeps its height). */
-function moveOpening(r, o, wid, cu, cv) {
-  const len = wid === 'back' || wid === 'front' ? r.w : r.l;
-  o.wall = wid; o.w = Math.min(o.w, len);
-  const off = clamp(cu - o.w / 2, 0, len - o.w), mid = (len - o.w) / 2;
-  o.off = Math.abs(off - mid) < 0.04 ? mid : Math.round(off * 100) / 100;
-  if (o.kind !== 'door' && cv !== null) o.y = Math.round(clamp(cv - o.h / 2, 0, Math.max(0, r.h - o.h - 0.02)) * 100) / 100;
+/* A window, door or radiator of room r ('op'), or a moulding ('frame'): its wall, and its rectangle in that wall's measures. */
+function wallThing(r, kind, id) {
+  if (kind === 'op') { const o = r.openings.find(x => x.id === id); return o && { o, wall: o.wall, u: o.off, v: opV(o), w: o.w, h: Math.min(o.h, r.h - 0.02 - opV(o)), floor: o.kind === 'door' }; }
+  const f = (r.frames || []).find(x => x.id === id);
+  return f && { o: f, wall: f.wall, u: f.u, v: f.v, w: f.w, h: f.h, floor: false };
 }
-function dragOpening(e) {
+/* Put it on wall wid with its middle at (cu, cv) in that wall's measures (cv null: it keeps its height). An opening too wide for the
+   wall gets narrower; a moulding keeps its size, which its linked copies share. */
+function moveThing(r, kind, t, wid, cu, cv) {
+  const len = wid === 'back' || wid === 'front' ? r.w : r.l, o = t.o, w = kind === 'op' ? Math.min(o.w, len) : o.w;
+  const off = clamp(cu - w / 2, 0, Math.max(0, len - w)), mid = (len - w) / 2, u = Math.abs(off - mid) < 0.04 ? mid : Math.round(off * 100) / 100;
+  o.wall = wid;
+  if (kind === 'op') {
+    o.w = w; o.off = u;
+    if (o.kind !== 'door' && cv !== null) o.y = Math.round(clamp(cv - o.h / 2, 0, Math.max(0, r.h - o.h - 0.02)) * 100) / 100;
+  } else {
+    o.u = u;
+    if (cv !== null) o.v = Math.round(clamp(cv - o.h / 2, 0, Math.max(0, r.h - o.h)) * 100) / 100;
+  }
+}
+function dragThing(e) {
   if (!drag.moved && down && Math.hypot(e.clientX - down.x, e.clientY - down.y) < 5) return;      // not yet: it may be a tap
-  const r = roomById(drag.opRoom), o = r && r.openings.find(x => x.id === drag.op); if (!o) return;
+  const r = roomById(drag.wroom), t = r && wallThing(r, drag.kind, drag.id); if (!t) return;
+  const o = t.o;
   const at = mode === 'plan' ? planWallAt(r, drag.at) : wallAt(r);
   if (!at) return;
   if (!drag.moved) { drag.moved = true; showWall(null); if (selId) selectItem(null); }     // the distances take over from the wall's tint
@@ -966,22 +982,22 @@ function dragOpening(e) {
     if (dV < Math.max(0.12, 0.45 * dU)) cv = drag.cv0;
     else if (same && dU < Math.max(0.06, 0.45 * dV)) cu = drag.cu0;
   }
-  const was = `${o.wall} ${o.off} ${o.y}`;
-  moveOpening(r, o, at.wid, cu, cv);
-  if (`${o.wall} ${o.off} ${o.y}` !== was) opDirty = true;
+  const was = JSON.stringify(o);
+  moveThing(r, drag.kind, t, at.wid, cu, cv);
+  if (JSON.stringify(o) !== was) opDirty = true;
 }
 const dimMat = new THREE.LineBasicMaterial({ color: 0x141414, depthTest: false });        // ink, like the Measure tool
 const dimLines = ghost(new THREE.LineSegments(new THREE.BufferGeometry(), dimMat));
 dimLines.renderOrder = 10; dimLines.visible = false; scene.add(dimLines);
 const dimLabels = [0, 1, 2, 3].map(() => { const l = document.createElement('div'); l.className = 'mlabel dim'; l.hidden = true; stage.appendChild(l); return l; });
-/* The dragged opening's distances: left and right to the wall's ends; in 3D also down to the floor (not for a door) and up to the
+/* What's being dragged, its distances: left and right to the wall's ends; in 3D also down to the floor (not for a door) and up to the
    ceiling. A line with a tick across each end, and its length in cm on it. */
 function drawDims() {
-  const r = drag && drag.op && drag.moved && roomById(drag.opRoom), o = r && r.openings.find(x => x.id === drag.op);
-  if (!o) { if (dimLines.visible) { dimLines.visible = false; for (const l of dimLabels) l.hidden = true; } return; }
-  const len = o.wall === 'back' || o.wall === 'front' ? r.w : r.l, u0 = o.off, u1 = o.off + o.w, v0 = opV(o), v1 = Math.min(v0 + o.h, r.h - 0.02);
+  const r = drag && drag.kind && drag.moved && roomById(drag.wroom), t = r && wallThing(r, drag.kind, drag.id);
+  if (!t) { if (dimLines.visible) { dimLines.visible = false; for (const l of dimLabels) l.hidden = true; } return; }
+  const len = t.wall === 'back' || t.wall === 'front' ? r.w : r.l, u0 = t.u, u1 = t.u + t.w, v0 = t.v, v1 = t.v + t.h;
   const um = (u0 + u1) / 2, vm = (v0 + v1) / 2, plan = mode === 'plan', k = 0.05;
-  const P = (u, v, z = 0) => roomOffset(r).add(wallPointOf(r, o.wall, u, v, 0.03 + z));
+  const P = (u, v, z = 0) => roomOffset(r).add(wallPointOf(r, t.wall, u, v, 0.03 + z));
   const pts = [], mids = [];
   const dim = (a, b, along) => {
     if (b - a < 0.005) return;
@@ -995,7 +1011,7 @@ function drawDims() {
     mids.push({ p: A.clone().lerp(B, 0.5), text: `${Math.round((b - a) * 100)} cm` });
   };
   dim(0, u0, 'u'); dim(u1, len, 'u');
-  if (!plan) { if (o.kind !== 'door') dim(0, v0, 'v'); dim(v1, r.h, 'v'); }
+  if (!plan) { if (!t.floor) dim(0, v0, 'v'); dim(v1, r.h, 'v'); }
   dimLines.geometry.dispose(); dimLines.geometry = new THREE.BufferGeometry().setFromPoints(pts); dimLines.visible = true;
   dimLabels.forEach((l, i) => {
     const m = mids[i];

@@ -1320,7 +1320,10 @@ function autoColumns(len, blocks, v0, v1, panelW, count, opt = {}) {
   });
   return out;
 }
-function finishGroup(cfg, len, hMax, ops, blocks) {
+/* A tap inside a frame (where the wall shows through) picks the frame: an unseen surface across it. */
+const pickMat = new THREE.MeshBasicMaterial({ visible: false });
+/* A wall's finishes (and its rail), and the room's mouldings on it (frames: room.frames on this wall). */
+function finishGroup(cfg, len, hMax, ops, blocks, frames = []) {
   const g = new THREE.Group();
   const mats = new Map();
   const matFor = (f) => { if (!mats.has(f)) mats.set(f, finishMaterial(f)); return mats.get(f); };
@@ -1383,46 +1386,37 @@ function finishGroup(cfg, len, hMax, ops, blocks) {
   };
   const split = Math.min(cfg.split, hMax);
   const parts = cfg.layout === 'split' ? [['lo', 0, split], ['hi', split, hMax]] : [['lo', 0, hMax]];
-  for (const [key, z0, z1] of parts) {
-    const z = cfg[key];
-    zone(z0, z1, z.f);
-    if (!z.frames) continue;
-    // moulding frames in this part; the user's own panels, or an automatic fit around the openings
-    const [v0, v1] = frameSpan(cfg, key, hMax);
-    if (v1 - v0 < 0.15) continue;
-    const style = z.style, flat = style === 'soft' || style === 'tops';
-    const mould = std(mouldColor(z), style === 'soft' ? 0.95 : 0.5);
+  for (const [key, z0, z1] of parts) zone(z0, z1, cfg[key].f);
+  // the mouldings: each in its own group, picked and dragged on its own; it takes the colour of the part of the wall it sits on
+  for (const fr of frames) {
+    const z = cfg[parts.length > 1 && fr.v + fr.h / 2 > split ? 'hi' : 'lo'], style = fr.style, col = frameColor(fr, z);
+    const mould = std(col, style === 'soft' ? 0.95 : 0.5);
     mould.userData.own = true;
-    const plain = defaultFinish({ color: mouldColor(z) });
-    const shopM = style === 'mould' && z.moulding, mw = shopM ? shopM.face : 0.035, md = shopM ? shopM.depth : 0.016;   // a shop's moulding at its own size
-    const bl = (blocks || ops).filter(o => o.v0 < v1 && o.v1 > v0);
-    const cols = z.panels
-      ? z.panels.map((q, i) => ({ u: q.u, w: q.w, i })).filter(c => c.u + c.w <= len + 0.001 && !bl.some(o => c.u < o.u1 + 0.02 && c.u + c.w > o.u0 - 0.02))
-      : autoColumns(len, blocks || ops, v0, v1, z.panelW).map((c, i) => ({ ...c, i }));
-    for (const c of cols) {
-      const pg = new THREE.Group();
-      pg.userData.panel = c.i; pg.userData.zone = key;          // draggable along the wall
-      g.add(pg);
-      const u0 = c.u, u1 = c.u + c.w, zz = 0.001 + md / 2, zb = { u0: 0, u1: len, v0, v1 };
-      const ry = Math.min(c.w / 2, (v1 - v0) * 0.45);
-      if (style === 'soft') {               // upholstered pads with rounded corners
-        const pad = new THREE.Mesh(new RoundedBoxGeometry(c.w, v1 - v0, 0.032, 4, Math.min(0.05, c.w / 2 - 0.001)), z.inner && z.inner.type === 'paint' ? std(z.inner.color, 0.95) : mould);
-        pad.position.set((u0 + u1) / 2, (v0 + v1) / 2, 0.016); pad.castShadow = true; pad.receiveShadow = true;
-        pg.add(pad); continue;
-      }
-      if (style === 'tops') { shapeFill(archShape(u0, u1, v0, v1, ry), z.inner || plain, 0.003, pg, zb); continue; }
-      if (style === 'arch') {               // moulding that follows a round-topped frame
-        if (z.inner) shapeFill(archShape(u0, u1, v0, v1, ry), z.inner, 0.003, pg, zb);
-        const outer = archShape(u0 - mw / 2, u1 + mw / 2, v0 - mw / 2, v1 + mw / 2, ry + mw / 2);
-        outer.holes.push(archShape(u0 + mw / 2, u1 - mw / 2, v0 + mw / 2, v1 - mw / 2, Math.max(0.01, ry - mw / 2)));
-        solid(outer, mould, 0.016, 0.001, pg); continue;
-      }
-      if (z.inner) rect(u0, u1, v0, v1, z.inner, 0.003, pg, zb);
-      put(pg, box(c.w + mw, mw, md, mould), (u0 + u1) / 2, v1, zz);
-      put(pg, box(c.w + mw, mw, md, mould), (u0 + u1) / 2, v0, zz);
-      put(pg, box(mw, v1 - v0, md, mould), u0, (v0 + v1) / 2, zz);
-      put(pg, box(mw, v1 - v0, md, mould), u1, (v0 + v1) / 2, zz);
+    const plain = defaultFinish({ color: col });
+    const shopM = style === 'mould' && fr.moulding, mw = shopM ? shopM.face : 0.035, md = shopM ? shopM.depth : 0.016;   // a shop's moulding at its own size
+    const pg = new THREE.Group();
+    pg.userData.frameId = fr.id; pg.userData.roomId = R.id;
+    g.add(pg);
+    const u0 = fr.u, u1 = fr.u + fr.w, v0 = fr.v, v1 = fr.v + fr.h, zz = 0.001 + md / 2, zb = { u0: 0, u1: len, v0, v1 };
+    const ry = Math.min(fr.w / 2, fr.h * 0.45);
+    put(pg, new THREE.Mesh(new THREE.PlaneGeometry(fr.w, fr.h), pickMat), (u0 + u1) / 2, (v0 + v1) / 2, 0.004);
+    if (style === 'soft') {                 // upholstered pads with rounded corners
+      const pad = new THREE.Mesh(new RoundedBoxGeometry(fr.w, fr.h, 0.032, 4, Math.min(0.05, fr.w / 2 - 0.001)), fr.inner && fr.inner.type === 'paint' ? std(fr.inner.color, 0.95) : mould);
+      pad.position.set((u0 + u1) / 2, (v0 + v1) / 2, 0.016); pad.castShadow = true; pad.receiveShadow = true;
+      pg.add(pad); continue;
     }
+    if (style === 'tops') { shapeFill(archShape(u0, u1, v0, v1, ry), fr.inner || plain, 0.003, pg, zb); continue; }
+    if (style === 'arch') {                 // moulding that follows a round-topped frame
+      if (fr.inner) shapeFill(archShape(u0, u1, v0, v1, ry), fr.inner, 0.003, pg, zb);
+      const outer = archShape(u0 - mw / 2, u1 + mw / 2, v0 - mw / 2, v1 + mw / 2, ry + mw / 2);
+      outer.holes.push(archShape(u0 + mw / 2, u1 - mw / 2, v0 + mw / 2, v1 - mw / 2, Math.max(0.01, ry - mw / 2)));
+      solid(outer, mould, 0.016, 0.001, pg); continue;
+    }
+    if (fr.inner) rect(u0, u1, v0, v1, fr.inner, 0.003, pg, zb);
+    put(pg, box(fr.w + mw, mw, md, mould), (u0 + u1) / 2, v1, zz);
+    put(pg, box(fr.w + mw, mw, md, mould), (u0 + u1) / 2, v0, zz);
+    put(pg, box(mw, fr.h, md, mould), u0, (v0 + v1) / 2, zz);
+    put(pg, box(mw, fr.h, md, mould), u1, (v0 + v1) / 2, zz);
   }
   if (cfg.layout === 'split' && cfg.rail && cfg.split < hMax - 0.03)
     railAt(cfg.split, cfg.trim ? (() => { const m = std(cfg.trim, 0.5); m.userData.own = true; return m; })() : M.base);
@@ -1438,11 +1432,11 @@ function frameSpan(cfg, key, hMax) {
   const h = Math.min(z.panelH, e1 - e0), m = Math.min(Math.max((def[0] + def[1]) / 2, e0 + h / 2), e1 - h / 2);
   return [m - h / 2, m + h / 2];
 }
-function mouldColor(z) {
-  if (z.mould) return z.mould;
+/* A moulding's colour: its own, or the wall's where it sits (z: that part of the wall); padded and painted panels a shade darker so they show. */
+function frameColor(fr, z) {
+  if (fr.mould) return fr.mould;
   const base = z.f.type === 'paint' || z.f.type === 'panel' ? z.f.color : '#f6f5f1';
-  // frames match the wall; padded and painted panels are a shade darker so they show
-  return z.style === 'soft' || z.style === 'tops' ? '#' + new THREE.Color(base).multiplyScalar(0.84).getHexString() : base;
+  return fr.style === 'soft' || fr.style === 'tops' ? '#' + new THREE.Color(base).multiplyScalar(0.84).getHexString() : base;
 }
 /* Round-topped panel outline (a rectangle with a half ellipse on top). */
 function archShape(u0, u1, v0, v1, ry) {
@@ -1634,8 +1628,8 @@ function makeWall(parent, wid) {
   const skirt = (u0, u1) => { if (u1 - u0 > 0.01) for (const grp of [full, cut]) put(grp, box(u1 - u0, 0.07, 0.012, M.base, false), (u0 + u1) / 2, 0.035, 0.006); };
   for (const o of ops.filter(o => o.v0 < 0.08).sort((a, b) => a.u0 - b.u0)) { skirt(cur, o.u0); cur = Math.max(cur, o.u1); }
   skirt(cur, len);
-  full.add(finishGroup(R.walls[wid], len, H, ops, blocks));
-  cut.add(finishGroup(R.walls[wid], len, CUT, ops, blocks));
+  full.add(finishGroup(R.walls[wid], len, H, ops, blocks, (R.frames || []).filter(f => f.wall === wid)));
+  cut.add(finishGroup(R.walls[wid], len, CUT, ops, blocks, []));
   for (const op of ops) {                       // each in its own group, so a tap finds the window or door, not the wall
     const og = tagOp(new THREE.Group(), op.o), oc = tagOp(new THREE.Group(), op.o);
     if (op.o.kind === 'window') { buildWindow(og, op); if (!op.o.pass) put(oc, box(op.u1 - op.u0, CUT + 0.006, T * 0.5, M.winPlan, false), (op.u0 + op.u1) / 2, (CUT + 0.006) / 2, -T / 2); }
@@ -2100,14 +2094,15 @@ wallSel.add(ghost(new THREE.Mesh(new THREE.PlaneGeometry(1, 1), wallFill)), ghos
 wallSel.visible = false; scene.add(wallSel);
 let selWall = null, wallFlash = 0;
 function showWall(m) {
-  const same = m && selWall && m.r.id === selWall.r.id && m.wid === selWall.wid && m.z0 === selWall.z0 && m.z1 === selWall.z1;
+  const same = m && selWall && m.r.id === selWall.r.id && m.wid === selWall.wid && m.z0 === selWall.z0 && m.z1 === selWall.z1 && m.u0 === selWall.u0 && m.u1 === selWall.u1;
   selWall = m;
   if (!m) return;
   if (!same) wallFlash = performance.now();       // a new pick flashes; editing the same wall doesn't
   const len = m.wid === 'back' || m.wid === 'front' ? m.r.w : m.r.l;
-  wallSel.position.copy(roomOffset(m.r).add(wallPointOf(m.r, m.wid, len / 2, (m.z0 + m.z1) / 2, 0.035)));   // in front of padded panels (3.2 cm)
+  const u0 = m.u0 ?? 0, u1 = m.u1 ?? len;                // m.u0, m.u1: just that stretch of it (a moulding)
+  wallSel.position.copy(roomOffset(m.r).add(wallPointOf(m.r, m.wid, (u0 + u1) / 2, (m.z0 + m.z1) / 2, 0.035)));   // in front of padded panels (3.2 cm)
   wallSel.rotation.y = frameOf(m.r, m.wid).rot;
-  wallSel.scale.set(len, m.z1 - m.z0, 1);
+  wallSel.scale.set(u1 - u0, m.z1 - m.z0, 1);
 }
 
 /* ---------- Picking and dragging: furniture inside its room; whole rooms in the plan ---------- */
@@ -2115,7 +2110,7 @@ const canvas = renderer.domElement;
 const ray = new THREE.Raycaster(), ndc = new THREE.Vector2(), floorPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), hit = new THREE.Vector3();
 let drag = null, down = null;
 const engineHooks = { onSelect: () => {}, onWall: () => {}, onChange: () => {}, onRoomTap: () => {}, onRoomMoved: () => {}, onToolTap: () => {}, onItemTap: () => {}, onBlankTap: () => {},
-  onOpening: () => {}, onOpMoved: () => {} };
+  onOpening: () => {}, onOpMoved: () => {}, onFrame: () => {}, onFrameMoved: () => {} };
 function aim(e) {
   const r = canvas.getBoundingClientRect();
   ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
@@ -2127,10 +2122,11 @@ function pick() {
   for (const h of ray.intersectObjects([homeGroup], true)) {
     if (!shown(h.object)) continue;
     let o = h.object;
-    while (o && !o.userData.itemId && !o.userData.opId && !o.userData.wallId && !o.userData.floor) o = o.parent;
+    while (o && !o.userData.itemId && !o.userData.opId && !o.userData.frameId && !o.userData.wallId && !o.userData.floor) o = o.parent;
     if (!o) continue;
     if (o.userData.itemId) return { item: o.userData.itemId, point: h.point };
     if (o.userData.opId) return { op: o.userData.opId, room: o.userData.roomId, point: h.point };
+    if (o.userData.frameId) return { frame: o.userData.frameId, room: o.userData.roomId, point: h.point };
     if (o.userData.wallId) return { wall: o.userData.wallId, room: o.userData.roomId };
     return { floor: o.userData.floor, point: h.point };
   }
@@ -2253,12 +2249,12 @@ canvas.addEventListener('pointerdown', (e) => {
     const f = findItem(p.item);
     drag = { id: p.item, pid: e.pointerId, ox: f.r.x + f.it.x - p.point.x, oz: f.r.z + f.it.z - p.point.z };
     floorPlane.constant = -p.point.y;
-  } else if (p.op && editable && focus === p.room) {           // a window, door or radiator: it slides along the walls
-    const r = roomById(p.room), o = r && r.openings.find(x => x.id === p.op);
-    if (!o) return;
-    const f = frameOf(r, o.wall), u = p.point.clone().sub(roomOffset(r).add(f.o)).dot(uDirOf(f.rot));
-    drag = { op: o.id, opRoom: r.id, pid: e.pointerId, du: o.off + o.w / 2 - u, dv: opV(o) + o.h / 2 - p.point.y, at: o.wall,   // where on it it was held
-      wall0: o.wall, cu0: o.off + o.w / 2, cv0: opV(o) + o.h / 2 };                                                            // and where it started
+  } else if ((p.op || p.frame) && editable && focus === p.room) {      // a window, door, radiator or moulding: it slides along the walls
+    const kind = p.op ? 'op' : 'frame', r = roomById(p.room), t = r && wallThing(r, kind, p.op || p.frame);
+    if (!t) return;
+    const f = frameOf(r, t.wall), u = p.point.clone().sub(roomOffset(r).add(f.o)).dot(uDirOf(f.rot));
+    drag = { kind, id: t.o.id, wroom: r.id, pid: e.pointerId, du: t.u + t.w / 2 - u, dv: t.v + t.h / 2 - p.point.y, at: t.wall,   // where on it it was held
+      wall0: t.wall, cu0: t.u + t.w / 2, cv0: t.v + t.h / 2 };                                                                  // and where it started
   } else if (p.floor && arranging) {
     const r = roomById(p.floor);
     drag = { room: r.id, pid: e.pointerId, ox: r.x - p.point.x, oz: r.z - p.point.z };
@@ -2270,7 +2266,7 @@ canvas.addEventListener('pointerdown', (e) => {
 canvas.addEventListener('pointermove', (e) => {
   aim(e);
   if (drag && e.pointerId === drag.pid) {
-    if (drag.op) { dragOpening(e); return; }
+    if (drag.kind) { dragThing(e); return; }
     if (!ray.ray.intersectPlane(floorPlane, hit)) return;
     if (drag.room) {
       const r = roomById(drag.room), s = snapRoom(r, hit.x + drag.ox, hit.z + drag.oz);
@@ -2290,13 +2286,13 @@ canvas.addEventListener('pointermove', (e) => {
   if (e.pointerType !== 'mouse') return;
   if (tool !== 'select') { canvas.style.cursor = 'crosshair'; return; }
   const p = pick();
-  canvas.style.cursor = p && editable && p.op && p.room === focus ? 'move' : p && (p.item || (editable && (p.wall || p.op))) ? 'pointer' : p && p.floor && editable && mode === 'plan' && !focus && HOME && HOME.rooms.length > 1 ? 'move' : 'grab';
+  canvas.style.cursor = p && editable && (p.op || p.frame) && p.room === focus ? 'move' : p && (p.item || (editable && (p.wall || p.op || p.frame))) ? 'pointer' : p && p.floor && editable && mode === 'plan' && !focus && HOME && HOME.rooms.length > 1 ? 'move' : 'grab';
 });
 function endDrag(e) {
   if (drag && e.pointerId === drag.pid) {
     const d = drag; drag = null; controls().enabled = true;
     try { canvas.releasePointerCapture(e.pointerId); } catch (er) {}
-    if (d.op) { if (d.moved) { opDirty = false; buildRoom(); engineHooks.onOpMoved(d.opRoom, d.op); down = null; return; } }
+    if (d.kind) { if (d.moved) { opDirty = false; buildRoom(); (d.kind === 'op' ? engineHooks.onOpMoved : engineHooks.onFrameMoved)(d.wroom, d.id); down = null; return; } }
     else if (d.moved && d.room) { buildRoom(); engineHooks.onRoomMoved(d.room, true); }
     else if (d.moved) engineHooks.onChange();
     if (d.moved) { down = null; return; }
@@ -2310,15 +2306,16 @@ function endDrag(e) {
     else if (!p || p.floor) { selectItem(null); engineHooks.onBlankTap(); }
     else if (p.item) engineHooks.onItemTap(p.item);         // selected on the way down; a tap (not a drag) also opens its panel
     else if (p.op) engineHooks.onOpening(p.room, p.op);
+    else if (p.frame) engineHooks.onFrame(p.room, p.frame);
   }
   down = null;
 }
-/* ---------- Windows, doors and radiators, dragged along the walls ----------
-   An opening follows the pointer over its room's walls: in 3D over the inner faces standing full height (walls cut away for the view
-   don't count), and on round a corner onto the next wall; in the plan along the wall nearest the pointer, any of the four. It stays
-   inside the wall, moves by the centimetre and settles in the middle when it comes within 4 cm of it. Windows and radiators move up
-   and down too; doors stand on the floor. The room is rebuilt once a frame while it moves (opDirty), and its distances to the
-   wall's ends, the floor and the ceiling show as it goes (drawDims). */
+/* ---------- Windows, doors, radiators and mouldings, dragged along the walls ----------
+   What hangs on a wall follows the pointer over its room's walls: in 3D over the inner faces standing full height (walls cut away for
+   the view don't count), and on round a corner onto the next wall; in the plan along the wall nearest the pointer, any of the four. It
+   stays inside the wall, moves by the centimetre and settles in the middle when it comes within 4 cm of it. It moves up and down too,
+   but a door stands on the floor. The room is rebuilt once a frame while it moves (opDirty), and its distances to the wall's ends,
+   the floor and the ceiling show as it goes (drawDims). */
 let opDirty = false;
 const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), tmpHit = new THREE.Vector3();
 function wallAt(r) {
@@ -2344,17 +2341,30 @@ function planWallAt(r, cur) {
   const f = frameOf(r, wid);
   return { wid, u: tmpHit.clone().sub(roomOffset(r).add(f.o)).dot(uDirOf(f.rot)), v: null };
 }
-/* Put opening o on wall wid with its middle at (cu, cv) in that wall's measures (cv null: it keeps its height). */
-function moveOpening(r, o, wid, cu, cv) {
-  const len = wid === 'back' || wid === 'front' ? r.w : r.l;
-  o.wall = wid; o.w = Math.min(o.w, len);
-  const off = clamp(cu - o.w / 2, 0, len - o.w), mid = (len - o.w) / 2;
-  o.off = Math.abs(off - mid) < 0.04 ? mid : Math.round(off * 100) / 100;
-  if (o.kind !== 'door' && cv !== null) o.y = Math.round(clamp(cv - o.h / 2, 0, Math.max(0, r.h - o.h - 0.02)) * 100) / 100;
+/* A window, door or radiator of room r ('op'), or a moulding ('frame'): its wall, and its rectangle in that wall's measures. */
+function wallThing(r, kind, id) {
+  if (kind === 'op') { const o = r.openings.find(x => x.id === id); return o && { o, wall: o.wall, u: o.off, v: opV(o), w: o.w, h: Math.min(o.h, r.h - 0.02 - opV(o)), floor: o.kind === 'door' }; }
+  const f = (r.frames || []).find(x => x.id === id);
+  return f && { o: f, wall: f.wall, u: f.u, v: f.v, w: f.w, h: f.h, floor: false };
 }
-function dragOpening(e) {
+/* Put it on wall wid with its middle at (cu, cv) in that wall's measures (cv null: it keeps its height). An opening too wide for the
+   wall gets narrower; a moulding keeps its size, which its linked copies share. */
+function moveThing(r, kind, t, wid, cu, cv) {
+  const len = wid === 'back' || wid === 'front' ? r.w : r.l, o = t.o, w = kind === 'op' ? Math.min(o.w, len) : o.w;
+  const off = clamp(cu - w / 2, 0, Math.max(0, len - w)), mid = (len - w) / 2, u = Math.abs(off - mid) < 0.04 ? mid : Math.round(off * 100) / 100;
+  o.wall = wid;
+  if (kind === 'op') {
+    o.w = w; o.off = u;
+    if (o.kind !== 'door' && cv !== null) o.y = Math.round(clamp(cv - o.h / 2, 0, Math.max(0, r.h - o.h - 0.02)) * 100) / 100;
+  } else {
+    o.u = u;
+    if (cv !== null) o.v = Math.round(clamp(cv - o.h / 2, 0, Math.max(0, r.h - o.h)) * 100) / 100;
+  }
+}
+function dragThing(e) {
   if (!drag.moved && down && Math.hypot(e.clientX - down.x, e.clientY - down.y) < 5) return;      // not yet: it may be a tap
-  const r = roomById(drag.opRoom), o = r && r.openings.find(x => x.id === drag.op); if (!o) return;
+  const r = roomById(drag.wroom), t = r && wallThing(r, drag.kind, drag.id); if (!t) return;
+  const o = t.o;
   const at = mode === 'plan' ? planWallAt(r, drag.at) : wallAt(r);
   if (!at) return;
   if (!drag.moved) { drag.moved = true; showWall(null); if (selId) selectItem(null); }     // the distances take over from the wall's tint
@@ -2368,22 +2378,22 @@ function dragOpening(e) {
     if (dV < Math.max(0.12, 0.45 * dU)) cv = drag.cv0;
     else if (same && dU < Math.max(0.06, 0.45 * dV)) cu = drag.cu0;
   }
-  const was = `${o.wall} ${o.off} ${o.y}`;
-  moveOpening(r, o, at.wid, cu, cv);
-  if (`${o.wall} ${o.off} ${o.y}` !== was) opDirty = true;
+  const was = JSON.stringify(o);
+  moveThing(r, drag.kind, t, at.wid, cu, cv);
+  if (JSON.stringify(o) !== was) opDirty = true;
 }
 const dimMat = new THREE.LineBasicMaterial({ color: 0x141414, depthTest: false });        // ink, like the Measure tool
 const dimLines = ghost(new THREE.LineSegments(new THREE.BufferGeometry(), dimMat));
 dimLines.renderOrder = 10; dimLines.visible = false; scene.add(dimLines);
 const dimLabels = [0, 1, 2, 3].map(() => { const l = document.createElement('div'); l.className = 'mlabel dim'; l.hidden = true; stage.appendChild(l); return l; });
-/* The dragged opening's distances: left and right to the wall's ends; in 3D also down to the floor (not for a door) and up to the
+/* What's being dragged, its distances: left and right to the wall's ends; in 3D also down to the floor (not for a door) and up to the
    ceiling. A line with a tick across each end, and its length in cm on it. */
 function drawDims() {
-  const r = drag && drag.op && drag.moved && roomById(drag.opRoom), o = r && r.openings.find(x => x.id === drag.op);
-  if (!o) { if (dimLines.visible) { dimLines.visible = false; for (const l of dimLabels) l.hidden = true; } return; }
-  const len = o.wall === 'back' || o.wall === 'front' ? r.w : r.l, u0 = o.off, u1 = o.off + o.w, v0 = opV(o), v1 = Math.min(v0 + o.h, r.h - 0.02);
+  const r = drag && drag.kind && drag.moved && roomById(drag.wroom), t = r && wallThing(r, drag.kind, drag.id);
+  if (!t) { if (dimLines.visible) { dimLines.visible = false; for (const l of dimLabels) l.hidden = true; } return; }
+  const len = t.wall === 'back' || t.wall === 'front' ? r.w : r.l, u0 = t.u, u1 = t.u + t.w, v0 = t.v, v1 = t.v + t.h;
   const um = (u0 + u1) / 2, vm = (v0 + v1) / 2, plan = mode === 'plan', k = 0.05;
-  const P = (u, v, z = 0) => roomOffset(r).add(wallPointOf(r, o.wall, u, v, 0.03 + z));
+  const P = (u, v, z = 0) => roomOffset(r).add(wallPointOf(r, t.wall, u, v, 0.03 + z));
   const pts = [], mids = [];
   const dim = (a, b, along) => {
     if (b - a < 0.005) return;
@@ -2397,7 +2407,7 @@ function drawDims() {
     mids.push({ p: A.clone().lerp(B, 0.5), text: `${Math.round((b - a) * 100)} cm` });
   };
   dim(0, u0, 'u'); dim(u1, len, 'u');
-  if (!plan) { if (o.kind !== 'door') dim(0, v0, 'v'); dim(v1, r.h, 'v'); }
+  if (!plan) { if (!t.floor) dim(0, v0, 'v'); dim(v1, r.h, 'v'); }
   dimLines.geometry.dispose(); dimLines.geometry = new THREE.BufferGeometry().setFromPoints(pts); dimLines.visible = true;
   dimLabels.forEach((l, i) => {
     const m = mids[i];
@@ -2925,6 +2935,7 @@ const FIN_TYPES = [['paint', 'Paint'], ['pattern', 'Pattern'], ['panel', 'Panell
 const PATTERNS = { stars: 'Stars', dots: 'Dots', stripes: 'Stripes', gingham: 'Gingham', waves: 'Waves' };
 const RAIL_STYLES = [['straight', 'Straight'], ['scallop', 'Scallops'], ['scallop-down', 'Scallop border'], ['wave', 'Wave']];
 const FRAME_STYLES = [['mould', 'Frames'], ['arch', 'Arches'], ['soft', 'Padded'], ['tops', 'Painted']];
+const FRAME_NAMES = { mould: 'Frame', arch: 'Arch', soft: 'Padded panel', tops: 'Painted panel' };
 
 /* ---------- Wall finishes ---------- */
 function defaultFinish(over) {
@@ -2939,7 +2950,7 @@ function cleanPaint(m) {
 }
 /* Paints that are the same purchase: the same product, and for a mixed one the same colour code. */
 const paintKey = (m) => m.ref + (m.mix ? '|' + String(m.code || '').trim().toLowerCase() : '');
-const defaultZone = (over) => ({ f: defaultFinish(), frames: false, style: 'mould', inner: null, mould: null, panelW: 0.7, panels: null, gap: null, panelH: null, moulding: null, ...over });
+const defaultZone = (over) => ({ f: defaultFinish(), ...over });       // a wall, or one part of a split wall: its finish (mouldings are the room's own objects)
 const defaultWall = () => ({ layout: 'whole', split: 1.0, rail: true, trim: null, railStyle: 'straight', railSize: 0.09, railM: null, lo: defaultZone(), hi: defaultZone() });
 function cleanImg(m) {
   if (!m || typeof m !== 'object' || !BLOB.test(m.src || '')) return null;
@@ -2963,9 +2974,57 @@ function cleanFinish(src, def) {
 const cleanPanels = (ps) => (Array.isArray(ps) ? ps.filter(q => q && typeof q.u === 'number' && typeof q.w === 'number' && q.w > 0.05 && q.u >= 0).slice(0, 24).map(q => ({ u: q.u, w: q.w })) : null);
 function cleanZone(z, def) {
   z = z && typeof z === 'object' ? z : {};
-  return { f: cleanFinish(z.f, def.f), frames: !!z.frames, style: FRAME_STYLES.some(([k]) => k === z.style) ? z.style : 'mould',
-    inner: z.inner ? cleanFinish(z.inner, defaultFinish()) : null, mould: HEX.test(z.mould || '') ? z.mould : null,
-    panelW: num(z.panelW, 0.3, 2, 0.7), panels: cleanPanels(z.panels), gap: num(z.gap, 0, 1, null), panelH: num(z.panelH, 0.1, 4, null), moulding: cleanMoulding(z.moulding) };
+  return { f: cleanFinish(z.f, def.f) };
+}
+/* ---------- Mouldings ----------
+   Each moulding is an object of its room (room.frames): a frame, an arch, a padded or a painted panel on a wall. Its place is its own:
+   the wall, u from the wall's left end facing it to its left edge, v from the floor to its bottom edge. The rest (LINKED: its kind,
+   size, shop's moulding, colour and the finish inside) it shares with the copies linked to it, the frames with the same link, in any
+   room of the home: change one and they all change (syncLinked in the studio; cleanHome keeps them alike). */
+const LINKED = ['style', 'w', 'h', 'moulding', 'mould', 'inner'];
+const frameLen = (r, wid) => (wid === 'back' || wid === 'front' ? r.w : r.l);
+function cleanFrame(f, r) {
+  if (!f || typeof f !== 'object' || !WALL_IDS.includes(f.wall)) return null;
+  const len = frameLen(r, f.wall), idOk = (v) => /^[\w-]{1,40}$/.test(v || '');
+  const w = Math.min(num(f.w, 0.05, 15, 0.6), len), h = Math.min(num(f.h, 0.05, 5, 0.6), r.h);
+  return { id: idOk(f.id) ? f.id : newId('f'), link: idOk(f.link) ? f.link : newId('k'), wall: f.wall,
+    u: clamp(num(f.u, -1, 16, 0), 0, Math.max(0, len - w)), v: clamp(num(f.v, -1, 6, 0.2), 0, Math.max(0, r.h - h)), w, h,
+    style: FRAME_NAMES[f.style] ? f.style : 'mould', moulding: cleanMoulding(f.moulding), mould: HEX.test(f.mould || '') ? f.mould : null,
+    inner: f.inner ? cleanFinish(f.inner, defaultFinish()) : null };
+}
+/* Make frame f like frame a (they're linked): the shared values copied, its own place kept inside its wall. */
+function copyLinked(a, f, r) {
+  for (const k of LINKED) f[k] = a[k] && typeof a[k] === 'object' ? JSON.parse(JSON.stringify(a[k])) : a[k];
+  const len = frameLen(r, f.wall);
+  f.w = Math.min(f.w, len); f.h = Math.min(f.h, r.h);
+  f.u = clamp(f.u, 0, Math.max(0, len - f.w)); f.v = clamp(f.v, 0, Math.max(0, r.h - f.h));
+}
+/* A part of a wall filled with mouldings in the stretches between its windows and doors, at the height the part leaves for them:
+   copies linked together, one link per width (those beside a window can be narrower). Adding mouldings to a part does this; so does
+   opening a home saved before mouldings were objects, from the setting its parts kept (their frames' kind, moulding, colour and
+   inside, and a width to fill with or the frames' own places), so they land where they used to be drawn. */
+function fillFrames(r, wid, key, look, panelW = 0.7, panelH = null, panels = null) {
+  const cfg = r.walls[wid], len = frameLen(r, wid), out = [];
+  const blocks = r.openings.filter(o => o.wall === wid).map(o => ({ u0: o.off, u1: o.off + o.w, v0: o.kind === 'door' ? 0 : o.y, v1: (o.kind === 'door' ? 0 : o.y) + o.h }));
+  const [v0, v1] = frameSpan({ ...cfg, [key]: { panelH } }, key, r.h);
+  if (v1 - v0 < 0.15) return out;
+  const bl = blocks.filter(o => o.v0 < v1 && o.v1 > v0);
+  const cols = panels ? panels.filter(c => c.u + c.w <= len + 0.001 && !bl.some(o => c.u < o.u1 + 0.02 && c.u + c.w > o.u0 - 0.02)) : autoColumns(len, blocks, v0, v1, panelW);
+  const links = new Map();
+  for (const c of cols) {
+    const k = Math.round(c.w * 1000);
+    if (!links.has(k)) links.set(k, newId('k'));
+    out.push(cleanFrame({ ...look, wall: wid, u: c.u, v: v0, w: c.w, h: v1 - v0, link: links.get(k) }, r));
+  }
+  return out.filter(Boolean);
+}
+function legacyFrames(r, wid, raw) {
+  if (!raw || typeof raw !== 'object') return [];
+  return (r.walls[wid].layout === 'split' ? ['lo', 'hi'] : ['lo']).flatMap(key => {
+    const z = raw[key];
+    if (!z || typeof z !== 'object' || !z.frames) return [];
+    return fillFrames(r, wid, key, { style: z.style, moulding: z.moulding, mould: z.mould, inner: z.inner }, num(z.panelW, 0.3, 2, 0.7), num(z.panelH, 0.1, 4, null), cleanPanels(z.panels));
+  });
 }
 function cleanWall(w) {
   const d = defaultWall(); w = w && typeof w === 'object' ? w : {};
@@ -3034,6 +3093,8 @@ function cleanRoom(src) {
       y: o.kind === 'door' ? 0 : Math.min(num(o.y, 0, r.h, 0.9), Math.max(0, r.h - h)) });
   }
   for (const wid of WALL_IDS) r.walls[wid] = cleanWall(src.walls && src.walls[wid]);
+  r.frames = Array.isArray(src.frames) ? src.frames.slice(0, 200).map(f => cleanFrame(f, r)).filter(Boolean)
+    : WALL_IDS.flatMap(wid => legacyFrames(r, wid, src.walls && src.walls[wid]));          // a home saved before mouldings were objects
   for (const it of Array.isArray(src.items) ? src.items.slice(0, 200) : []) {
     if (!it || typeof it !== 'object') continue;
     const p = cleanProduct(it.p);
@@ -3088,6 +3149,7 @@ function exampleFlat(name, h) {
   bed.openings = [{ id: newId('o'), kind: 'window', wall: 'right', off: 0.3, w: 1.3, h: 1.4, y: 0.85 }];
   const nursery = roomFrom('nursery', 'Nursery', 3.0, 3.0, h, 2.2, 2.0);
   nursery.openings = [{ id: newId('o'), kind: 'window', wall: 'right', off: 0.9, w: 1.14, h: 1.4, y: 0.93 }, { id: newId('o'), kind: 'radiator', wall: 'right', off: 1.1, w: 0.77, h: 0.6, y: 0.12 }];
+  nursery.frames = ['hi', 'lo'].flatMap(key => fillFrames(nursery, 'right', key, { style: 'mould' }));     // laid out again round the window it has now
   nursery.items = nursery.items.map(it => { const c = clampItem(nursery, it); return { ...it, ...c }; });
   const rooms = [hall, living, kitchen, bed, nursery];
   for (const [r, side] of [[living, 'left'], [kitchen, 'left'], [bed, 'right'], [nursery, 'right']]) { const d = doorBetween(hall, r, side); if (d) r.openings.push(d); }
@@ -3105,6 +3167,11 @@ function cleanHome(src) {
   const rooms = Array.isArray(src.rooms) && src.rooms.length ? src.rooms.slice(0, 24).map(cleanRoom) : [cleanRoom({ ...src, x: 0, z: 0 })];
   const ids = new Set();
   for (const r of rooms) { if (ids.has(r.id)) r.id = newId('room'); ids.add(r.id); delete r.evening; delete r.published; delete r.cover; delete r.updatedAt; delete r.from; delete r.notes; }
+  const fids = new Set(), firsts = new Map();               // linked copies stay alike: each link as its first copy
+  for (const r of rooms) for (const f of r.frames) {
+    if (fids.has(f.id)) f.id = newId('f'); fids.add(f.id);
+    if (firsts.has(f.link)) copyLinked(firsts.get(f.link), f, r); else firsts.set(f.link, f);
+  }
   return { v: 2, name: str(src.name, 60, rooms[0].name), rooms, evening: !!src.evening, updatedAt: num(src.updatedAt, 0, 1e14, 0), published: !!src.published,
     cover: ASSET.test(src.cover || '') ? src.cover : null,
     from: src.from && typeof src.from === 'object' ? { owner: str(src.from.owner, 80), id: str(src.from.id, 60), name: str(src.from.name, 60) } : null };
@@ -4323,6 +4390,7 @@ for (const el of studioEl.querySelectorAll('.rbtn')) el.addEventListener('click'
 $('st-fit').addEventListener('click', () => { if (studio) resetView(true); });
 function changed(rebuild) {
   if (!studio || studio.mode !== 'edit') return;
+  const fr = curFrame(); if (fr) syncLinked(fr);       // a moulding's page is open: its linked copies follow it
   if (rebuild) { buildRoom(); showSelection(); }
   if (tool === 'paint') renderProps();          // the areas follow edits made in the side panel
   $('st-save').textContent = 'Saving…';
@@ -4363,6 +4431,19 @@ engineHooks.onOpening = (roomId, id) => {
 engineHooks.onOpMoved = (roomId, id) => {
   if (!studio || !studio.room || studio.room.id !== roomId) return;
   setNode('op:' + id); studio.tab = 'room';
+  changed(false); renderStudio();
+};
+/* A moulding, the same: tapped, its page; dragged and let go, saved and its page (its place is its own: the linked copies stay put). */
+engineHooks.onFrame = (roomId, id) => {
+  if (!studio || studio.mode !== 'edit') return;
+  if (!studio.room || studio.room.id !== roomId) focusRoom(roomId);
+  if (selId) selectItem(null);
+  setNode('frame:' + id); studio.tab = 'room'; renderStudio(); $('pane').scrollTop = 0;
+  raiseSheet();
+};
+engineHooks.onFrameMoved = (roomId, id) => {
+  if (!studio || !studio.room || studio.room.id !== roomId) return;
+  setNode('frame:' + id); studio.tab = 'room';
   changed(false); renderStudio();
 };
 /* Empty floor tapped on a phone: whatever was picked is let go (a piece, a wall's page) and the sheet goes back down. */
@@ -4470,13 +4551,15 @@ function renderPane() {
   syncWallMark();
   renderPeek();
 }
-/* Tint the wall (or the part of it) whose page is open: a wall, one of its parts, its mouldings, its rail, or a window on it.
-   Nothing on the tree, the other pages, or with Measure or Paint on. */
+/* Tint the wall (or the part of it) whose page is open: a wall, one of its parts, its rail, or a window on it; or just the moulding
+   whose page it is. Nothing on the tree, the other pages, or with Measure or Paint on. */
 function syncWallMark() {
   const st = studio, r = st && st.room, k = st && st.node ? st.node.split(':')[0] : '';
-  if (!r || st.mode !== 'edit' || st.tab !== 'room' || !['wall', 'part', 'frames', 'rail', 'op'].includes(k) || tool !== 'select') { showWall(null); return; }
+  if (!r || st.mode !== 'edit' || st.tab !== 'room' || !['wall', 'part', 'frame', 'rail', 'op'].includes(k) || tool !== 'select') { showWall(null); return; }
+  const fr = curFrame();
+  if (fr) { showWall({ r, wid: fr.wall, z0: fr.v, z1: fr.v + fr.h, u0: fr.u, u1: fr.u + fr.w }); return; }
   const cfg = r.walls[st.wall], sp = Math.min(cfg.split, r.h);
-  const [z0, z1] = (k === 'part' || k === 'frames') && cfg.layout === 'split' ? (st.part === 'hi' ? [sp, r.h] : [0, sp]) : [0, r.h];
+  const [z0, z1] = k === 'part' && cfg.layout === 'split' ? (st.part === 'hi' ? [sp, r.h] : [0, sp]) : [0, r.h];
   showWall({ r, wid: st.wall, z0, z1 });
 }
 const numField = (label, act, val, extra = '', unit = 'cm', attrs = '') => `<label class="field"><span>${label}</span><span class="in"><input type="number" inputmode="decimal" data-act="${act}" ${extra} value="${val}" ${attrs}><span class="u">${unit}</span></span></label>`;
@@ -4535,8 +4618,8 @@ function addRoomDialog() {
 /* ---------- The room as a tree ---------- */
 /* The Room tab shows the room as a tree: the room, its floor, its four walls with what's on each (windows, doors, radiators,
    mouldings, the rail, the two parts of a split wall) and its furniture. Each line opens its own page (studio.node):
-   'room', 'floor', 'furniture', 'wall:<wid>', 'part:<wid>:<hi|lo>', 'frames:<wid>:<hi|lo>', 'rail:<wid>', 'op:<id>'; null is the tree.
-   Wall pages set studio.wall and studio.part, which the wall editors and their events read (zoneOf). Furniture opens its own
+   'room', 'floor', 'furniture', 'wall:<wid>', 'part:<wid>:<hi|lo>', 'frame:<id>' (a moulding), 'rail:<wid>', 'op:<id>'; null is the tree.
+   Wall pages (and a moulding's) set studio.wall and studio.part, which the wall editors and their events read (zoneOf). Furniture opens its own
    floating panel, as when it's tapped in the room. */
 const PART_NAMES = { hi: 'Top part', lo: 'Bottom part' };
 const GLYPHS = {
@@ -4563,7 +4646,46 @@ function finishText(f) {
   return `${what} · ${f.paint ? f.paint.name + (f.paint.mix && f.paint.code ? ' ' + f.paint.code : '') : pre ? pre[0] : f.color}`;
 }
 const finishPic = (f) => ({ style: f.type === 'image' && f.img ? `background-image:url(${blobSrc(f.img.src)})` : `background:${f.color}` });
-const framesText = (z) => (FRAME_STYLES.find(([k]) => k === z.style) || ['', 'Mouldings'])[1] + (z.style === 'mould' && z.moulding ? ` · ${z.moulding.name}` : '');
+/* ---------- Mouldings: objects on the walls, alone or linked (app-data.js, Mouldings) ---------- */
+const curFrame = () => { const n = studio && studio.node; return n && n.startsWith('frame:') && studio.room ? studio.room.frames.find(f => f.id === n.slice(6)) || null : null; };
+const partOf = (r, f) => (r.walls[f.wall].layout === 'split' && f.v + f.h / 2 > Math.min(r.walls[f.wall].split, r.h) ? 'hi' : 'lo');
+/* The mouldings on a wall, or on one part of a split wall (key), left to right. */
+function framesOn(r, wid, key) {
+  const split = r.walls[wid].layout === 'split';
+  return r.frames.filter(f => f.wall === wid && (!split || !key || partOf(r, f) === key)).sort((a, b) => a.u - b.u || a.v - b.v);
+}
+const linkCount = (f) => studio.home.rooms.reduce((t, r) => t + r.frames.filter(g => g.link === f.link).length, 0);
+/* "Frame 2": its kind, and its place among the wall's mouldings from the left. */
+const frameName = (f, r = studio.room) => `${FRAME_NAMES[f.style]} ${framesOn(r, f.wall).indexOf(f) + 1}`;
+const frameSub = (f) => { const n = linkCount(f); return `${cm(f.w)} × ${cm(f.h)} cm${n > 1 ? ` · ${n} linked` : ''}`; };
+const frameNodes = (r, wid, key) => framesOn(r, wid, key).map(f => tnode('frame:' + f.id, { glyph: 'frames' }, frameName(f, r), frameSub(f))).join('');
+/* Its linked copies, in every room of the home, take its kind, size, moulding, colour and inside (their places stay their own). */
+function syncLinked(f) {
+  for (const r of studio.home.rooms) for (const g of r.frames) if (g !== f && g.link === f.link) copyLinked(f, g, r);
+}
+/* A copy of moulding f, linked to it or on its own, at the same height in the free stretch of its wall nearest to it: 10 cm clear of
+   the other mouldings and the windows and doors at that height. With no room left on the wall it sits 10 cm off the original, to be
+   dragged where it goes (fits: false). */
+function copyFrame(r, f, linked) {
+  const len = frameLen(r, f.wall), gap = 0.1, c = JSON.parse(JSON.stringify(f));
+  c.id = newId('f'); if (!linked) c.link = newId('k');
+  const at = (v0, v1) => v0 < f.v + f.h && v1 > f.v;
+  const busy = [...r.frames.filter(g => g.wall === f.wall && at(g.v, g.v + g.h)).map(g => [g.u, g.u + g.w]),
+    ...r.openings.filter(o => o.wall === f.wall && at(opV(o), opV(o) + o.h)).map(o => [o.off, o.off + o.w])];
+  // the nearest free place starts at a wall's end or just clear of something on it (a millimetre's slack: the place of one just
+  // removed, exactly its width and two gaps, still fits)
+  let best = null;
+  for (const u of [0, len - f.w, ...busy.flatMap(([a, b]) => [b + gap, a - gap - f.w])]) {
+    if (u < -0.001 || u > len - f.w + 0.001 || !busy.every(([a, b]) => u + f.w + gap <= a + 0.001 || u >= b + gap - 0.001)) continue;
+    if (best === null || Math.abs(u - f.u) < Math.abs(best - f.u)) best = clamp(u, 0, len - f.w);
+  }
+  const fits = best !== null;
+  c.u = fits ? best : clamp(f.u + gap, 0, Math.max(0, len - f.w));
+  r.frames.push(c);
+  return { c, fits };
+}
+/* Every finish in a room: its walls' and the insides of its mouldings. */
+const roomFinishes = (r) => [...WALL_IDS.flatMap(wid => [r.walls[wid].lo.f, r.walls[wid].hi.f]), ...r.frames.map(f => f.inner).filter(Boolean)];
 const railText = (cfg) => (RAIL_STYLES.find(([k]) => k === cfg.railStyle) || ['', 'Rail'])[1] + (cfg.railStyle === 'straight' && cfg.railM ? ` · ${cfg.railM.name}` : '');
 const opText = (o) => `${cm(o.w)} × ${cm(o.h)} cm, ${cm(o.off)} cm from the left`;
 /* A wall's finish: once when both parts of a split wall have the same one. */
@@ -4579,22 +4701,22 @@ function nodeSummary(n) {
   if (k === 'floor') return r.flooring ? r.flooring.name : FLOORS[r.floor][0];
   if (k === 'furniture') return r.items.length ? `${r.items.length} piece${r.items.length === 1 ? '' : 's'}` : 'None yet';
   if (k === 'op') { const o = r.openings.find(x => x.id === a); return o ? opText(o) : ''; }
+  if (k === 'wall') return cfg ? wallText(cfg) : '';
+  if (k === 'frame') { const f = curFrame(); return f ? frameSub(f) : ''; }
   if (!cfg) return '';
-  if (k === 'wall') return wallText(cfg);
   if (k === 'part') return cfg[b] ? finishText(cfg[b].f) : '';
-  if (k === 'frames') return cfg[b] ? framesText(cfg[b]) : '';
   if (k === 'rail') return railText(cfg);
   return '';
 }
-/* What hangs on a wall, as lines of the tree: its windows, doors and radiators, then its parts and their mouldings, then the rail. */
+/* What hangs on a wall, as lines of the tree: its windows, doors and radiators, then its parts and their mouldings (each its own
+   line), then the rail. */
 function wallKids(r, wid) {
   const cfg = r.walls[wid], split = cfg.layout === 'split', out = [];
   for (const o of r.openings.filter(x => x.wall === wid)) out.push(tnode('op:' + o.id, { glyph: o.kind }, OP_KINDS[o.kind], opText(o)));
-  const frames = (key) => (cfg[key].frames ? tnode(`frames:${wid}:${key}`, { glyph: 'frames' }, 'Mouldings and panels', framesText(cfg[key])) : '');
   if (split) for (const key of ['hi', 'lo']) {
     out.push(tnode(`part:${wid}:${key}`, finishPic(cfg[key].f), PART_NAMES[key], finishText(cfg[key].f)));
-    const f = frames(key); if (f) out.push(`<div class="tgroup">${f}</div>`);
-  } else if (cfg.lo.frames) out.push(frames('lo'));
+    const f = frameNodes(r, wid, key); if (f) out.push(`<div class="tgroup">${f}</div>`);
+  } else out.push(frameNodes(r, wid));
   if (split && cfg.rail) out.push(tnode('rail:' + wid, { glyph: 'rail' }, 'Rail', railText(cfg)));
   return out.join('');
 }
@@ -4619,7 +4741,7 @@ function roomTree() {
 function nodeParent(n) {
   const [k, a, b] = n.split(':'), r = studio.room;
   if (k === 'op') { const o = r.openings.find(x => x.id === a); return o ? 'wall:' + o.wall : null; }
-  if (k === 'frames') return r.walls[a].layout === 'split' ? `part:${a}:${b}` : 'wall:' + a;
+  if (k === 'frame') { const f = r.frames.find(x => x.id === a); return f ? (r.walls[f.wall].layout === 'split' ? `part:${f.wall}:${partOf(r, f)}` : 'wall:' + f.wall) : null; }
   if (k === 'part' || k === 'rail') return 'wall:' + a;
   return null;
 }
@@ -4628,7 +4750,7 @@ function nodeName(n) {
   if (k === 'room') return 'Name and size';     // the crumb above it already says the room's name
   if (k === 'wall') return WALL_NAMES[a];
   if (k === 'part') return `${PART_NAMES[b]} of the ${WALL_NAMES[a].toLowerCase()}`;
-  if (k === 'frames') return 'Mouldings and panels';
+  if (k === 'frame') { const f = r.frames.find(x => x.id === a); return f ? frameName(f) : ''; }
   if (k === 'op') { const o = r.openings.find(x => x.id === a); return o ? OP_KINDS[o.kind] : ''; }
   return { floor: 'Floor', furniture: 'Furniture', rail: 'Rail' }[k] || '';
 }
@@ -4637,12 +4759,12 @@ function validNode(n) {
   if (!n) return null;
   const [k, a, b] = n.split(':'), r = studio.room;
   if (k === 'op') return r.openings.some(o => o.id === a) ? n : null;
-  if (!['part', 'frames', 'rail', 'wall'].includes(k)) return n;
+  if (k === 'frame') return r.frames.some(f => f.id === a) ? n : null;
+  if (!['part', 'rail', 'wall'].includes(k)) return n;
   if (!r.walls[a]) return null;
   const split = r.walls[a].layout === 'split';
   if (k === 'part') return split ? n : 'wall:' + a;
   if (k === 'rail') return split && r.walls[a].rail ? n : 'wall:' + a;
-  if (k === 'frames') { const key = split ? b : 'lo'; return r.walls[a][key].frames ? `frames:${a}:${key}` : split ? `part:${a}:${b}` : 'wall:' + a; }
   return n;
 }
 function setNode(n) {
@@ -4650,16 +4772,17 @@ function setNode(n) {
   n = r ? validNode(n) : null;
   st.node = n;
   if (!n) return;
-  const [k, a, b] = n.split(':'), wid = k === 'op' ? r.openings.find(o => o.id === a).wall : r.walls[a] ? a : null;
-  if (wid) { st.wall = wid; st.part = r.walls[wid].layout !== 'split' ? 'lo' : b === 'hi' || b === 'lo' ? b : st.part || 'hi'; }
+  const [k, a, b] = n.split(':'), fr = k === 'frame' && r.frames.find(f => f.id === a);
+  const wid = k === 'op' ? r.openings.find(o => o.id === a).wall : fr ? fr.wall : r.walls[a] ? a : null;
+  if (wid) { st.wall = wid; st.part = r.walls[wid].layout !== 'split' ? 'lo' : fr ? partOf(r, fr) : b === 'hi' || b === 'lo' ? b : st.part || 'hi'; }
 }
 function goNode(n) { setNode(n); studio.tab = 'room'; renderPane(); $('pane').scrollTop = 0; }
 function nodePage() {
   const n = studio.node, [k, a, b] = n.split(':'), par = nodeParent(n), r = studio.room;
-  const sub = k === 'op' ? `On the ${WALL_NAMES[studio.wall].toLowerCase()}` : k === 'frames' ? `On the ${WALL_NAMES[a].toLowerCase()}${r.walls[a].layout === 'split' ? ', ' + PART_NAMES[b].toLowerCase() : ''}`
+  const sub = k === 'op' ? `On the ${WALL_NAMES[studio.wall].toLowerCase()}` : k === 'frame' ? `On the ${WALL_NAMES[studio.wall].toLowerCase()}${r.walls[studio.wall].layout === 'split' ? ', ' + PART_NAMES[studio.part].toLowerCase() : ''}`
     : k === 'wall' ? `${cm(wallLen(a))} cm long` : k === 'rail' ? `Along the ${WALL_NAMES[a].toLowerCase()}, ${cm(Math.min(r.walls[a].split, r.h))} cm up` : '';
   const body = k === 'room' ? roomEditor() : k === 'floor' ? floorNote(r) : k === 'furniture' ? furnitureEditor() : k === 'wall' ? wallEditor(a)
-    : k === 'part' ? partEditor(a, b) : k === 'frames' ? framesEditor(a, b) : k === 'rail' ? railEditor(a) : opEditor(a);
+    : k === 'part' ? partEditor(a, b) : k === 'frame' ? frameEditor(a) : k === 'rail' ? railEditor(a) : opEditor(a);
   return `<div class="node-top"><button type="button" class="crumb" data-act="nodeback"><span aria-hidden="true">‹</span> <span data-fill="${fills.push(par ? nodeName(par) : r.name) - 1}"></span></button>
     <h3 class="node-h" data-fill="${fills.push(nodeName(n)) - 1}"></h3>${sub ? `<p class="note">${sub}</p>` : ''}</div>${body}`;
 }
@@ -4700,13 +4823,13 @@ function shopping(home) {
     const g = groups.get(k) || { p: it.p, n: 0 }; g.n++; groups.set(k, g);
   }
   const papers = new Map();
-  for (const r of rooms) for (const wid of WALL_IDS) for (const z of [r.walls[wid].lo, r.walls[wid].hi]) for (const f of [z.f, z.inner]) if (f && f.type === 'image' && f.img && f.img.ref) papers.set(f.img.ref, f.img);
+  for (const r of rooms) for (const f of roomFinishes(r)) if (f.type === 'image' && f.img && f.img.ref) papers.set(f.img.ref, f.img);
   const paperRows = [...papers.values()].map(img => ({ img, plan: paperPlan(rooms, img) })).filter(x => x.plan.uses.length);
   const paints = new Map();
-  for (const r of rooms) for (const wid of WALL_IDS) for (const z of [r.walls[wid].lo, r.walls[wid].hi]) for (const f of [z.f, z.inner]) { for (const m of [f && f.paint, f && f.type === 'image' && f.base]) if (m && !paints.has(paintKey(m))) paints.set(paintKey(m), m); }   // the first wall names the line
+  for (const r of rooms) for (const f of roomFinishes(r)) { for (const m of [f.paint, f.type === 'image' && f.base]) if (m && !paints.has(paintKey(m))) paints.set(paintKey(m), m); }   // the first wall names the line
   const paintRows = [...paints.values()].map(paint => ({ paint, plan: paintPlan(rooms, paint) })).filter(x => x.plan.tins);
   const moulds = new Map();
-  for (const r of rooms) for (const wid of WALL_IDS) { const w = r.walls[wid]; for (const m of [w.railM, w.lo.moulding, w.hi.moulding]) if (m) moulds.set(m.ref, m); }
+  for (const r of rooms) { for (const wid of WALL_IDS) if (r.walls[wid].railM) moulds.set(r.walls[wid].railM.ref, r.walls[wid].railM); for (const f of r.frames) if (f.style === 'mould' && f.moulding) moulds.set(f.moulding.ref, f.moulding); }
   const mouldRows = [...moulds.values()].map(m => ({ m, plan: mouldingPlan(rooms, m) })).filter(x => x.plan.strips);
   const floors = new Map();
   for (const r of rooms) if (r.flooring && !floors.has(r.flooring.ref)) floors.set(r.flooring.ref, r.flooring);     // the first room names the line
@@ -4756,7 +4879,7 @@ function fillListNames() {
 }
 
 /* ---------- Walls ---------- */
-const finOf = (z, slot) => (slot === 'in' ? z.inner : z.f);
+const finOf = (z, slot) => (slot === 'in' ? (curFrame() || {}).inner : z.f);      // 'in': the inside of the moulding whose page is open
 function zoneOf() { const cfg = studio.room.walls[studio.wall]; return cfg[cfg.layout === 'split' ? studio.part : 'lo']; }
 function swatchRow(act, current, slot, withAuto) {
   return `<div class="swatches">${withAuto ? `<button type="button" class="btn small" data-act="${act}" data-slot="${slot || ''}" data-v="" aria-pressed="${!current}">Auto</button>` : ''}${PRESETS.map(([n, c]) => `<button type="button" class="dot" data-act="${act}" data-slot="${slot || ''}" data-v="${c}" title="${n}" aria-label="${n}" aria-pressed="${(current || '').toLowerCase() === c}" style="background:${c}"></button>`).join('')}
@@ -4765,7 +4888,7 @@ function swatchRow(act, current, slot, withAuto) {
 function wallpapers() {
   const shopWp = allProducts().filter(p => p.kind === 'wallpaper' && p.wallpaper && p.wallpaper.tile);
   const mine = new Map();
-  for (const r of [studio.home, ...S.drafts.values()].flatMap(h => h.rooms)) for (const wid of WALL_IDS) for (const z of [r.walls[wid].lo, r.walls[wid].hi]) for (const f of [z.f, z.inner]) if (f && f.img && !f.img.ref) mine.set(f.img.src, f.img);
+  for (const r of [studio.home, ...S.drafts.values()].flatMap(h => h.rooms)) for (const f of roomFinishes(r)) if (f.img && !f.img.ref) mine.set(f.img.src, f.img);
   return { shopWp, mine: [...mine.values()] };
 }
 function finishEditor(f, slot, title) {
@@ -4806,9 +4929,9 @@ function mouldPick(act, cur, label) {
 }
 /* What can be added to a wall or a part of it, as buttons under its lines. */
 function addRow(wid, key) {
-  const cfg = studio.room.walls[wid], split = cfg.layout === 'split', b = (act, v, label, extra = '') => `<button type="button" class="btn small" data-act="${act}" data-v="${v}" data-wall="${wid}" ${extra}>${label}</button>`;
+  const cfg = studio.room.walls[wid], split = cfg.layout === 'split', b = (act, v, label, extra = '') => `<button type="button" class="btn small${extra.includes('data-danger') ? ' danger' : ''}" data-act="${act}" data-v="${v}" data-wall="${wid}" ${extra}>${label}</button>`;
   const here = key ? [] : Object.entries(OP_KINDS).map(([k, n]) => b('opadd', k, 'Add ' + n.toLowerCase()));
-  if ((key || !split) && !cfg[key || 'lo'].frames) here.push(b('framesadd', key || 'lo', 'Add mouldings or panels'));
+  if (key || !split) here.push(framesOn(studio.room, wid, key).length ? b('framesdel', key || 'lo', 'Remove the mouldings', 'data-danger="1"') : b('framesadd', key || 'lo', 'Add mouldings or panels'));
   if (!key && split && !cfg.rail) here.push(b('railadd', '', 'Add a rail'));
   return here.length ? `<div class="addrow">${here.join('')}</div>` : '';
 }
@@ -4817,7 +4940,7 @@ function wallEditor(wid) {
   const r = studio.room, cfg = r.walls[wid], split = cfg.layout === 'split', z = cfg.lo, kids = wallKids(r, wid);
   return `<div class="pair"><button type="button" class="btn small" data-act="wallzoom">Zoom to this wall</button><button type="button" class="btn small" data-act="wallroom">Whole room</button></div>
     <div class="seg wide" role="group" aria-label="Layout"><button type="button" data-act="layout" data-v="whole" aria-pressed="${!split}">One part</button><button type="button" data-act="layout" data-v="split" aria-pressed="${split}">Split in two</button></div>
-    ${split ? numField('Split height', 'split', cm(cfg.split), 'min="20" max="400" step="1"') : `${finishEditor(z.f, 'f', 'Finish')}${paperNote(z)}${baseNote(z)}${paintNote(z)}`}
+    ${split ? numField('Split height', 'split', cm(cfg.split), 'min="20" max="400" step="1"') : `${finishEditor(z.f, 'f', 'Finish')}${paperNote(z.f)}${baseNote(z.f, 'f')}${paintNote(z.f)}`}
     <div class="sec-h">On this wall</div>
     ${kids ? `<div class="tree">${kids}</div>` : '<p class="note">Nothing yet.</p>'}
     ${addRow(wid)}
@@ -4825,22 +4948,24 @@ function wallEditor(wid) {
 }
 /* One part of a split wall: its finish and its mouldings. */
 function partEditor(wid, key) {
-  const z = studio.room.walls[wid][key];
-  return `${finishEditor(z.f, 'f', 'Finish')}${paperNote(z)}${baseNote(z)}${paintNote(z)}
-    ${z.frames ? `<div class="sec-h">On this part</div><div class="tree">${tnode(`frames:${wid}:${key}`, { glyph: 'frames' }, 'Mouldings and panels', framesText(z))}</div>` : ''}
+  const z = studio.room.walls[wid][key], fr = frameNodes(studio.room, wid, key);
+  return `${finishEditor(z.f, 'f', 'Finish')}${paperNote(z.f)}${baseNote(z.f, 'f')}${paintNote(z.f)}
+    ${fr ? `<div class="sec-h">On this part</div><div class="tree">${fr}</div>` : ''}
     ${addRow(wid, key)}`;
 }
-/* Mouldings or panels on a wall or a part of it: their kind, moulding, colour, how many and how big, and what's inside them. */
-function framesEditor(wid, key) {
-  const z = studio.room.walls[wid][key], pn = panelNow(wid, key);
-  return `<div class="seg wide" role="group" aria-label="Kind of panel">${FRAME_STYLES.map(([k, n]) => `<button type="button" data-act="fstyle" data-v="${k}" aria-pressed="${z.style === k}">${n}</button>`).join('')}</div>
-    ${z.style === 'mould' ? mouldPick('pmould', z.moulding, 'Moulding') : ''}
-    <span class="note">${z.style === 'soft' || z.style === 'tops' ? 'Panel colour' : 'Moulding colour'}</span>${swatchRow('mould', z.mould, '', true)}
-    <div class="fields">${numField('Panels', 'pcount', pn.n, 'min="1" max="24" step="1"', '')}${numField('Width', 'pwidth', cm(pn.w), 'min="5" max="400" step="1"')}${numField('Height', 'pheight', cm(pn.h), 'min="10" max="400" step="1"')}${numField('Separation', 'pgap', cm(pn.gap), 'min="0" max="100" step="1"')}${numField('Padding', 'ppad', cm(pn.pad), 'min="3" max="200" step="1"')}</div>
-    <p class="note">Padding is the space at the ends of the wall and around windows and doors. A new width keeps the number and separation and moves the padding; the other values keep the rest and change the width. The height stays centred.${pn.uneven ? ' Panels beside a window or door get their own width to fill their stretch.' : ''}</p>
-    ${z.style !== 'soft' ? `<div class="seg wide" role="group" aria-label="Inside"><button type="button" data-act="inner" data-v="same" aria-pressed="${!z.inner}">${z.style === 'tops' ? 'Plain colour' : 'Same as the wall'}</button><button type="button" data-act="inner" data-v="own" aria-pressed="${!!z.inner}">Its own finish</button></div>` : ''}
-    ${z.inner && z.style !== 'soft' ? finishEditor(z.inner, 'in', z.style === 'tops' ? 'Panel finish' : 'Inside the frames') : ''}
-    <div><button type="button" class="btn small danger" data-act="framesdel" data-v="${key}" data-wall="${wid}">Remove the mouldings</button></div>`;
+/* One moulding: what it is and how big (shared with the copies linked to it), where it is (its own), what's inside it, and copies. */
+function frameEditor(id) {
+  const f = curFrame(); if (!f) return '';
+  const n = linkCount(f), soft = f.style === 'soft';
+  return `<div class="seg wide" role="group" aria-label="Kind">${FRAME_STYLES.map(([k, nm]) => `<button type="button" data-act="kstyle" data-v="${k}" aria-pressed="${f.style === k}">${nm}</button>`).join('')}</div>
+    ${f.style === 'mould' ? mouldPick('fmould', f.moulding, 'Moulding') : ''}
+    <span class="note">${soft || f.style === 'tops' ? 'Panel colour' : 'Moulding colour'}</span>${swatchRow('kcolor', f.mould, '', true)}
+    <div class="fields two">${numField('Width', 'kdim', cm(f.w), 'data-k="w" min="5" max="1500" step="1"')}${numField('Height', 'kdim', cm(f.h), 'data-k="h" min="5" max="500" step="1"')}
+      ${numField('From the left', 'kpos', cm(f.u), 'data-k="u" min="0" max="1500" step="1"')}${numField('From the floor', 'kpos', cm(f.v), 'data-k="v" min="0" max="500" step="1"')}</div>
+    ${!soft ? `<div class="seg wide" role="group" aria-label="Inside"><button type="button" data-act="kinner" data-v="same" aria-pressed="${!f.inner}">${f.style === 'tops' ? 'Plain colour' : 'Same as the wall'}</button><button type="button" data-act="kinner" data-v="own" aria-pressed="${!!f.inner}">Its own finish</button></div>` : ''}
+    ${f.inner && !soft ? finishEditor(f.inner, 'in', f.style === 'tops' ? 'Panel finish' : 'Inside the frame') + paperNote(f.inner) + baseNote(f.inner, 'in') + paintNote(f.inner) : ''}
+    <p class="note">${n > 1 ? `Linked with ${n - 1} other${n === 2 ? '' : 's'}: its kind, moulding, colour, size and inside are theirs too, so a change here changes them all; its place is its own. ` : ''}“From the left” is measured facing the wall. You can also drag it in the room, along this wall or onto another.</p>
+    <div class="addrow"><button type="button" class="btn small" data-act="kdup">Duplicate</button><button type="button" class="btn small" data-act="klink">Linked copy</button>${n > 1 ? '<button type="button" class="btn small" data-act="kunlink">Unlink</button>' : ''}<button type="button" class="btn small danger" data-act="kdel">Remove</button></div>`;
 }
 /* The rail where a split wall changes finish: its shape, moulding and colour. */
 function railEditor(wid) {
@@ -4867,14 +4992,7 @@ function mouldingPieces(rooms, m) {
   for (const r of rooms) for (const wid of WALL_IDS) {
     const cfg = r.walls[wid], len = wid === 'back' || wid === 'front' ? r.w : r.l;
     const blocks = r.openings.filter(o => o.wall === wid).map(o => ({ u0: o.off, u1: o.off + o.w, v0: o.kind === 'door' ? 0 : o.y, v1: (o.kind === 'door' ? 0 : o.y) + o.h }));
-    for (const key of cfg.layout === 'split' ? ['lo', 'hi'] : ['lo']) {
-      const z = cfg[key];
-      if (!z.frames || z.style !== 'mould' || !z.moulding || z.moulding.ref !== m.ref) continue;
-      const [v0, v1] = frameSpan(cfg, key, r.h); if (v1 - v0 < 0.15) continue;
-      const bl = blocks.filter(o => o.v0 < v1 && o.v1 > v0);
-      const cols = (z.panels || autoColumns(len, blocks, v0, v1, z.panelW)).filter(c => c.u + c.w <= len + 0.001 && !bl.some(o => c.u < o.u1 + 0.02 && c.u + c.w > o.u0 - 0.02));
-      for (const c of cols) pieces.push(c.w + m.face, c.w + m.face, v1 - v0 + m.face, v1 - v0 + m.face);
-    }
+    for (const f of r.frames) if (f.wall === wid && f.style === 'mould' && f.moulding && f.moulding.ref === m.ref) pieces.push(f.w + m.face, f.w + m.face, f.h + m.face, f.h + m.face);
     if (cfg.layout === 'split' && cfg.rail && cfg.railStyle === 'straight' && cfg.railM && cfg.railM.ref === m.ref && cfg.split < r.h - 0.03) {
       const y = cfg.split;
       let cur = 0;
@@ -4902,26 +5020,22 @@ function mouldingPlan(rooms, m) {
 /* Litres of a shop's paint across the whole room: wall area (minus windows and doors) × coats ÷ coverage, in whole tins. */
 function paintPlan(rooms, paint) {
   let area = 0;
-  for (const r of rooms) for (const wid of WALL_IDS) {
-    const cfg = r.walls[wid], len = wid === 'back' || wid === 'front' ? r.w : r.l;
-    const blocks = r.openings.filter(o => o.wall === wid).map(o => ({ u0: o.off, u1: o.off + o.w, v0: o.kind === 'door' ? 0 : o.y, v1: (o.kind === 'door' ? 0 : o.y) + o.h }));
-    const parts = cfg.layout === 'split' ? [['lo', 0, Math.min(cfg.split, r.h)], ['hi', Math.min(cfg.split, r.h), r.h]] : [['lo', 0, r.h]];
-    for (const [key, z0, z1] of parts) {
-      const z = cfg[key], uses = (f) => f && (f.type === 'image' ? f.base : (f.type === 'paint' || f.type === 'panel') && f.paint) && paintKey(f.type === 'image' ? f.base : f.paint) === paintKey(paint);
-      if (uses(z.f)) area += wallPartArea(r, wid, z0, z1);
-      if (z.frames && z.style !== 'soft' && uses(z.inner)) {
-        const [v0, v1] = frameSpan(cfg, key, r.h);
-        if (v1 - v0 >= 0.15) for (const c of (z.panels || autoColumns(len, blocks, v0, v1, z.panelW))) area += c.w * (v1 - v0);
-      }
+  const uses = (f) => f && (f.type === 'image' ? f.base : (f.type === 'paint' || f.type === 'panel') && f.paint) && paintKey(f.type === 'image' ? f.base : f.paint) === paintKey(paint);
+  for (const r of rooms) {
+    for (const wid of WALL_IDS) {
+      const cfg = r.walls[wid];
+      const parts = cfg.layout === 'split' ? [['lo', 0, Math.min(cfg.split, r.h)], ['hi', Math.min(cfg.split, r.h), r.h]] : [['lo', 0, r.h]];
+      for (const [key, z0, z1] of parts) if (uses(cfg[key].f)) area += wallPartArea(r, wid, z0, z1);
     }
+    for (const f of r.frames) if (f.style !== 'soft' && uses(f.inner)) area += f.w * f.h;      // the inside of a moulding
   }
   const litres = area * paint.coats / paint.coverage, tins = area > 0.01 ? Math.ceil(litres / paint.tinL - 1e-6) : 0;
   const fmt = (v) => v.toLocaleString(undefined, { maximumFractionDigits: 1 });
   return { area, litres, tins, cost: paint.price !== null ? tins * paint.price : null,
     text: `${tins} tin${tins === 1 ? '' : 's'} of ${fmt(paint.tinL)} L · ${fmt(litres)} L for ${fmt(area)} m², ${paint.coats} coat${paint.coats === 1 ? '' : 's'}` };
 }
-function paintNote(z) {
-  const paint = [z.f, z.inner].map(f => f && (f.type === 'paint' || f.type === 'panel') && f.paint).find(Boolean);
+function paintNote(f) {
+  const paint = f && (f.type === 'paint' || f.type === 'panel') && f.paint;
   if (!paint) return '';
   const plan = paintPlan(studio.home.rooms, paint);
   return `<div class="finish"><div class="fin-h">How much paint</div><div>${plan.text}</div>${plan.cost !== null ? `<div class="price">${euro(plan.cost)}</div>` : ''}<p class="note">Across the whole home, windows and doors left out. Coverage and tin size from the shop.</p></div>`;
@@ -4929,10 +5043,9 @@ function paintNote(z) {
 /* Paint on the wall before the paper goes up. Any paint unless a shop's is picked: one coat, 10 m² a litre, 4 L tins.
    Walls papered over the same base paint add up, like any other paint. */
 const anyBase = (coats = 1) => cleanPaint({ ref: 'base:any', name: 'Paint under the wallpaper', tinL: 4, coverage: 10, coats });
-function baseNote(z) {
-  const slot = z.f && z.f.type === 'image' ? 'f' : z.inner && z.inner.type === 'image' && z.frames && z.style !== 'soft' ? 'in' : null;
-  if (!slot) return '';
-  const f = finOf(z, slot), b = f.base;
+function baseNote(f, slot) {
+  if (!f || f.type !== 'image') return '';
+  const b = f.base;
   const box = `<label class="check"><input type="checkbox" data-act="fbase" data-slot="${slot}" ${b ? 'checked' : ''}><span>Paint the wall before papering</span></label>`;
   if (!b) return `<div class="finish">${box}</div>`;
   const paints = allProducts().filter(p => p.kind === 'paint' && !(p.paint && p.paint.mix)), plan = paintPlan(studio.home.rooms, b), own = b.ref !== 'base:any';
@@ -4944,8 +5057,8 @@ function baseNote(z) {
     <div>${plan.text}</div>${plan.cost !== null ? `<div class="price">${euro(plan.cost)}</div>` : ''}
     <p class="note">Across the whole home, on every wall papered with this base, windows and doors left out. ${own ? 'Coverage and tin size from the shop.' : `Any paint: 10 m² a litre and 4 L tins assumed${paints.length ? '; pick a shop’s paint for its own coverage and price' : ''}.`}</p></div>`;
 }
-function paperNote(z) {
-  const img = [z.f, z.inner].map(f => f && f.type === 'image' && f.img).find(Boolean);
+function paperNote(f) {
+  const img = f && f.type === 'image' && f.img;
   if (!img) return '';
   const plan = paperPlan(studio.home.rooms, img);
   return `<div class="finish"><div class="fin-h">How much paper</div><div>${plan.text}</div>${plan.cost !== null ? `<div class="price">${euro(plan.cost)}</div>` : ''}<p class="note">Across the whole home. ${img.ref ? 'Roll size from the shop.' : 'For your own image, rolls of 53 cm × 10.05 m are assumed.'}</p></div>`;
@@ -4987,32 +5100,11 @@ function floorNote(r) {
     <p class="note">Across the whole home${many ? ', in every room with this floor' : ''}. ${fl.pack ? 'Pack size from the shop.' : 'Sold by the m².'}${SURFACE_LOOK[fl.surface][2] ? ' Laying it diagonally or in herringbone? Add 15% or more.' : ''}</p>
     ${many ? '<button type="button" class="btn small" data-act="floorall">Use this floor in every room</button>' : ''}</div>`;
 }
-function spreadPanels(wid, count, key, opt) {
-  const cfg = studio.room.walls[wid], [v0, v1] = frameSpan(cfg, key, H);
-  return autoColumns(wallLen(wid), wallBlocks(wid), v0, v1, cfg[key].panelW, count, opt);
-}
-/* The panels of one part as the fields show them: how many, how wide and high, how far apart, and the padding before the first. */
-function panelNow(wid, key) {
-  const z = studio.room.walls[wid][key], cols = z.panels || spreadPanels(wid, undefined, key), [v0, v1] = frameSpan(studio.room.walls[wid], key, H);
-  let gap = Infinity;
-  for (let i = 1; i < cols.length; i++) gap = Math.min(gap, cols[i].u - cols[i - 1].u - cols[i - 1].w);      // the smallest step: across a window it's wider
-  return { n: cols.length, w: cols.length ? cols[0].w : 0, h: v1 - v0, pad: cols.length ? cols[0].u : 0.12, gap: isFinite(gap) ? gap : z.gap ?? 0.1,
-    uneven: cols.some(c => Math.abs(c.w - cols[0].w) > 0.005) };
-}
-/* Lay the panels out again with some values changed and the rest kept. Changing the width keeps the number and the separation
-   and moves the padding; changing anything else keeps the other two and the width follows. Returns false if they don't fit. */
-function relayPanels(wid, key, o) {
-  const z = studio.room.walls[wid][key], cur = panelNow(wid, key), gap = o.gap ?? cur.gap;
-  const cols = spreadPanels(wid, o.n ?? cur.n, key, o.w ? { gap, w: o.w } : { pad: o.pad ?? cur.pad, gap });
-  if (!cols.length || cols.some(c => c.w < 0.05)) return false;
-  z.panels = cols.map(({ u, w }) => ({ u, w })); z.gap = gap;
-  return true;
-}
 /* Strips of roll width; shorter where a window or door takes the whole strip; 10 cm to trim; rounded up to the repeat. */
 function paperPlan(rooms, img) {
   const rw = img.rollW / 100, rl = img.rollL / 100, rep = img.mural ? 0 : img.width * img.aspect / 100, trim = 0.1;
   const cutLen = (h) => (rep > 0.01 ? Math.ceil((h + trim) / rep - 1e-6) * rep : h + trim);
-  const uses = [], pieces = [], slivers = [];
+  const uses = [], pieces = [], slivers = [], same = (f) => f && f.type === 'image' && f.img && (img.ref ? f.img.ref === img.ref : f.img.src === img.src);
   let area = 0, order = 0;
   for (const r of rooms) for (const wid of WALL_IDS) {
     const cfg = r.walls[wid], len = wid === 'back' || wid === 'front' ? r.w : r.l;
@@ -5020,7 +5112,7 @@ function paperPlan(rooms, img) {
     const holes = r.openings.filter(o => o.wall === wid && o.kind !== 'radiator').map(box2), blocks = r.openings.filter(o => o.wall === wid).map(box2);
     const parts = cfg.layout === 'split' ? [['lo', 0, Math.min(cfg.split, r.h)], ['hi', Math.min(cfg.split, r.h), r.h]] : [['lo', 0, r.h]];
     for (const [key, z0, z1] of parts) {
-      const z = cfg[key], same = (f) => f && f.type === 'image' && f.img && (img.ref ? f.img.ref === img.ref : f.img.src === img.src);
+      const z = cfg[key];
       if (same(z.f) && z1 - z0 > 0.01) {
         uses.push(wid); order += (len + 0.1) * (z1 - z0 + 0.1);
         for (let u = 0; u < len - 0.005; u += rw) {
@@ -5030,18 +5122,14 @@ function paperPlan(rooms, img) {
           for (const [s0, s1] of spans) { area += (b - a) * (s1 - s0); pieces.push(cutLen(s1 - s0)); }
         }
       }
-      if (z.frames && z.style !== 'soft' && same(z.inner)) {
-        const [v0, v1] = frameSpan(cfg, key, r.h); if (v1 - v0 < 0.15) continue;
-        const bl = blocks.filter(o => o.v0 < v1 && o.v1 > v0);
-        const cols = (z.panels || autoColumns(len, blocks, v0, v1, z.panelW)).filter(c => c.u + c.w <= len + 0.001 && !bl.some(o => c.u < o.u1 + 0.02 && c.u + c.w > o.u0 - 0.02));
-        if (cols.length) uses.push(wid);
-        for (const c of cols) {
-          const h = v1 - v0, full = Math.floor(c.w / rw + 1e-3), rest = c.w - full * rw;
-          area += c.w * h; order += (c.w + 0.1) * (h + 0.1);
-          for (let k = 0; k < full; k++) pieces.push(cutLen(h));
-          if (rest > 0.01) slivers.push({ w: rest, len: cutLen(h) });
-        }
-      }
+    }
+    const inside = r.frames.filter(f => f.wall === wid && f.style !== 'soft' && same(f.inner));       // papered inside a moulding
+    if (inside.length) uses.push(wid);
+    for (const f of inside) {
+      const full = Math.floor(f.w / rw + 1e-3), rest = f.w - full * rw;
+      area += f.w * f.h; order += (f.w + 0.1) * (f.h + 0.1);
+      for (let k = 0; k < full; k++) pieces.push(cutLen(f.h));
+      if (rest > 0.01) slivers.push({ w: rest, len: cutLen(f.h) });
     }
   }
   slivers.sort((a, b) => b.w - a.w);
@@ -5092,10 +5180,14 @@ async function paneEvent(e) {
   // the tree: open a line, go back up, add or remove what hangs on a wall
   if (act === 'node') { goNode(t.dataset.v); return; }
   if (act === 'nodeback') { goNode(studio.node && nodeParent(studio.node)); return; }
-  if (act === 'framesadd' || act === 'framesdel') {
+  if (act === 'framesadd' || act === 'framesdel') {         // a part filled with mouldings, linked to one another; or all of them taken off
     const w = t.dataset.wall, key = t.dataset.v, cfg = r.walls[w]; if (!cfg || !cfg[key]) return;
-    cfg[key].frames = act === 'framesadd'; changed(true);
-    goNode(act === 'framesadd' ? `frames:${w}:${key}` : cfg.layout === 'split' ? `part:${w}:${key}` : 'wall:' + w); return;
+    const split = cfg.layout === 'split', back = split ? `part:${w}:${key}` : 'wall:' + w;
+    if (act === 'framesdel') { const gone = new Set(framesOn(r, w, split ? key : null)); r.frames = r.frames.filter(f => !gone.has(f)); goNode(back); changed(true); return; }
+    const added = fillFrames(r, w, key, { style: 'mould' });
+    if (!added.length) { toast('There’s no room for mouldings on this part of the wall.'); return; }
+    r.frames.push(...added); goNode(back); changed(true);
+    toast(added.length > 1 ? `${added.length} mouldings added, linked: change one and they all change.` : 'A moulding added.'); return;
   }
   if (act === 'railadd' || act === 'raildel') {
     const w = t.dataset.wall; if (!r.walls[w]) return;
@@ -5125,6 +5217,8 @@ async function paneEvent(e) {
     copy.id = newId('room'); copy.name = copyName(r.name, studio.home.rooms.map(x => x.name));
     for (const o of copy.openings) o.id = newId('o');
     for (const it of copy.items) it.id = newId('i');
+    const links = new Map();              // its mouldings stay linked among themselves, not to the original's
+    for (const f of copy.frames) { f.id = newId('f'); if (!links.has(f.link)) links.set(f.link, newId('k')); f.link = links.get(f.link); }
     placeCopy(studio.home, r, copy);
     studio.home.rooms.push(copy);
     changed(true); resetView(); focusRoom(copy.id);
@@ -5146,39 +5240,47 @@ async function paneEvent(e) {
   if (act === 'split' && type === 'change') { const v = +t.value / 100; if (v >= 0.2 && v <= r.h - 0.1) cfg.split = v; changed(true); rerender(); return; }
   if (act === 'railStyle') { cfg.railStyle = t.dataset.v; changed(true); rerender(); return; }
   if (act === 'pickmould') {              // a moulding no longer listed stays until another is picked
-    const which = t.dataset.v, was = which === 'pmould' ? z.moulding : cfg.railM;
-    pickMaterial({ kind: 'moulding', title: which === 'pmould' ? 'Moulding for the frames' : 'Rail moulding', cur: was && was.ref,
+    const which = t.dataset.v, fr = curFrame(), was = which === 'fmould' ? fr && fr.moulding : cfg.railM;
+    pickMaterial({ kind: 'moulding', title: which === 'fmould' ? 'Moulding for the frame' : 'Rail moulding', cur: was && was.ref,
       none: ['Any moulding, not from a shop', 'Nido draws a plain one and leaves it out of the shopping list'],
       onPick: (p) => {
         const m = p ? cleanMoulding({ ref: p.ref, name: p.name, shop: p.shop, url: p.url, price: p.price, ...p.moulding }) : null;
-        if (which === 'pmould') z.moulding = m; else cfg.railM = m;
+        if (which === 'fmould') { if (fr) fr.moulding = m; } else cfg.railM = m;
         changed(true); renderPane();
       } });
     return;
   }
   const hexVal = () => (t.dataset.hex ? (parseHex(t.value) || null) : t.tagName === 'INPUT' ? t.value : t.dataset.v);
   if (act === 'trim') { const h = hexVal(); if (!h && t.dataset.hex) return; cfg.trim = h || null; changed(true); if (type !== 'input') rerender(); return; }
-  if (act === 'mould') { const h = hexVal(); if (!h && t.dataset.hex && t.value) return; z.mould = h || null; changed(true); if (type !== 'input') rerender(); return; }
-  if (act === 'fstyle') { z.style = t.dataset.v; changed(true); rerender(); return; }
-  if (['pcount', 'pwidth', 'pgap', 'ppad', 'pheight'].includes(act)) {
-    if (type !== 'change') return;
-    const v = +t.value, m = v / 100;
-    const ok = act === 'pheight' ? (m >= 0.1 && m <= 4 ? ((z.panelH = m), true) : false)
-      : act === 'pcount' ? Number.isInteger(v) && v >= 1 && v <= 24 && relayPanels(wid, part, { n: v })
-      : act === 'pwidth' ? m >= 0.05 && m <= 4 && relayPanels(wid, part, { w: m })
-      : act === 'pgap' ? m >= 0 && m <= 1 && relayPanels(wid, part, { gap: m })
-      : m >= 0.03 && m <= 2 && relayPanels(wid, part, { pad: m });
-    if (!ok) toast('That doesn’t fit on this wall.');
-    else {
-      changed(true);
-      const now = panelNow(wid, part);
-      if (act === 'pwidth' && now.w < m - 0.005) toast(`The widest that fits is ${cm(now.w)} cm.`);
-      if (act === 'pheight' && now.h < m - 0.005) toast(`The tallest that fits is ${cm(now.h)} cm.`);
-    }
-    rerender(); return;
+  // a moulding: what it is and how big (its linked copies follow: changed() syncs them), where it is, copies of it
+  const fr = curFrame();
+  if (fr && act === 'kstyle') { fr.style = t.dataset.v; changed(true); rerender(); return; }
+  if (fr && act === 'kcolor') { const h = hexVal(); if (!h && t.dataset.hex && t.value) return; fr.mould = h || null; changed(true); if (type !== 'input') rerender(); return; }
+  if (fr && act === 'kinner') { fr.inner = t.dataset.v === 'own' ? (fr.inner || defaultFinish({ color: '#d9a195' })) : null; changed(true); rerender(); return; }
+  if (fr && (act === 'kdim' || act === 'kpos') && type === 'change') {
+    const v = +t.value / 100, k = t.dataset.k, len = frameLen(r, fr.wall);
+    if (!isFinite(v) || (act === 'kdim' && v < 0.05)) { rerender(); return; }
+    if (k === 'w') fr.w = Math.min(v, len); else if (k === 'h') fr.h = Math.min(v, r.h); else fr[k] = v;
+    fr.u = clamp(fr.u, 0, Math.max(0, len - fr.w)); fr.v = clamp(fr.v, 0, Math.max(0, r.h - fr.h));
+    changed(true); rerender(); return;
   }
-  if (act === 'inner') { z.inner = t.dataset.v === 'own' ? (z.inner || defaultFinish({ color: '#d9a195' })) : null; changed(true); rerender(); return; }
-  if (act === 'allwalls') { for (const w of WALL_IDS) if (w !== wid) r.walls[w] = JSON.parse(JSON.stringify(cfg)); changed(true); toast('All four walls now match this one.'); return; }
+  if (fr && (act === 'kdup' || act === 'klink')) {
+    const { c, fits } = copyFrame(r, fr, act === 'klink');
+    goNode('frame:' + c.id); changed(true);
+    toast(!fits ? 'No free room on this wall: the copy is on top of the original. Drag it where it goes.'
+      : act === 'klink' ? 'A linked copy, in the nearest free space: change one and they all change.' : 'A copy of its own, in the nearest free space.'); return;
+  }
+  if (fr && act === 'kunlink') { fr.link = newId('k'); changed(false); rerender(); toast('Unlinked: this one changes on its own now.'); return; }
+  if (fr && act === 'kdel') { const back = nodeParent(studio.node); r.frames = r.frames.filter(x => x !== fr); goNode(back); changed(true); return; }
+  if (act === 'allwalls') {              // the other walls take this one's finish and its mouldings, linked to these
+    const mine = r.frames.filter(f => f.wall === wid);
+    r.frames = mine.slice();
+    for (const w of WALL_IDS) if (w !== wid) {
+      r.walls[w] = JSON.parse(JSON.stringify(cfg));
+      for (const f of mine) { const c = JSON.parse(JSON.stringify(f)); c.id = newId('f'); c.wall = w; copyLinked(f, c, r); r.frames.push(c); }
+    }
+    changed(true); toast('All four walls now match this one.'); return;
+  }
   const f = t.dataset.slot ? finOf(z, t.dataset.slot) : null;
   if (!f) return;
   if (act === 'ftype') {

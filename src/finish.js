@@ -197,7 +197,10 @@ function autoColumns(len, blocks, v0, v1, panelW, count, opt = {}) {
   });
   return out;
 }
-function finishGroup(cfg, len, hMax, ops, blocks) {
+/* A tap inside a frame (where the wall shows through) picks the frame: an unseen surface across it. */
+const pickMat = new THREE.MeshBasicMaterial({ visible: false });
+/* A wall's finishes (and its rail), and the room's mouldings on it (frames: room.frames on this wall). */
+function finishGroup(cfg, len, hMax, ops, blocks, frames = []) {
   const g = new THREE.Group();
   const mats = new Map();
   const matFor = (f) => { if (!mats.has(f)) mats.set(f, finishMaterial(f)); return mats.get(f); };
@@ -260,46 +263,37 @@ function finishGroup(cfg, len, hMax, ops, blocks) {
   };
   const split = Math.min(cfg.split, hMax);
   const parts = cfg.layout === 'split' ? [['lo', 0, split], ['hi', split, hMax]] : [['lo', 0, hMax]];
-  for (const [key, z0, z1] of parts) {
-    const z = cfg[key];
-    zone(z0, z1, z.f);
-    if (!z.frames) continue;
-    // moulding frames in this part; the user's own panels, or an automatic fit around the openings
-    const [v0, v1] = frameSpan(cfg, key, hMax);
-    if (v1 - v0 < 0.15) continue;
-    const style = z.style, flat = style === 'soft' || style === 'tops';
-    const mould = std(mouldColor(z), style === 'soft' ? 0.95 : 0.5);
+  for (const [key, z0, z1] of parts) zone(z0, z1, cfg[key].f);
+  // the mouldings: each in its own group, picked and dragged on its own; it takes the colour of the part of the wall it sits on
+  for (const fr of frames) {
+    const z = cfg[parts.length > 1 && fr.v + fr.h / 2 > split ? 'hi' : 'lo'], style = fr.style, col = frameColor(fr, z);
+    const mould = std(col, style === 'soft' ? 0.95 : 0.5);
     mould.userData.own = true;
-    const plain = defaultFinish({ color: mouldColor(z) });
-    const shopM = style === 'mould' && z.moulding, mw = shopM ? shopM.face : 0.035, md = shopM ? shopM.depth : 0.016;   // a shop's moulding at its own size
-    const bl = (blocks || ops).filter(o => o.v0 < v1 && o.v1 > v0);
-    const cols = z.panels
-      ? z.panels.map((q, i) => ({ u: q.u, w: q.w, i })).filter(c => c.u + c.w <= len + 0.001 && !bl.some(o => c.u < o.u1 + 0.02 && c.u + c.w > o.u0 - 0.02))
-      : autoColumns(len, blocks || ops, v0, v1, z.panelW).map((c, i) => ({ ...c, i }));
-    for (const c of cols) {
-      const pg = new THREE.Group();
-      pg.userData.panel = c.i; pg.userData.zone = key;          // draggable along the wall
-      g.add(pg);
-      const u0 = c.u, u1 = c.u + c.w, zz = 0.001 + md / 2, zb = { u0: 0, u1: len, v0, v1 };
-      const ry = Math.min(c.w / 2, (v1 - v0) * 0.45);
-      if (style === 'soft') {               // upholstered pads with rounded corners
-        const pad = new THREE.Mesh(new RoundedBoxGeometry(c.w, v1 - v0, 0.032, 4, Math.min(0.05, c.w / 2 - 0.001)), z.inner && z.inner.type === 'paint' ? std(z.inner.color, 0.95) : mould);
-        pad.position.set((u0 + u1) / 2, (v0 + v1) / 2, 0.016); pad.castShadow = true; pad.receiveShadow = true;
-        pg.add(pad); continue;
-      }
-      if (style === 'tops') { shapeFill(archShape(u0, u1, v0, v1, ry), z.inner || plain, 0.003, pg, zb); continue; }
-      if (style === 'arch') {               // moulding that follows a round-topped frame
-        if (z.inner) shapeFill(archShape(u0, u1, v0, v1, ry), z.inner, 0.003, pg, zb);
-        const outer = archShape(u0 - mw / 2, u1 + mw / 2, v0 - mw / 2, v1 + mw / 2, ry + mw / 2);
-        outer.holes.push(archShape(u0 + mw / 2, u1 - mw / 2, v0 + mw / 2, v1 - mw / 2, Math.max(0.01, ry - mw / 2)));
-        solid(outer, mould, 0.016, 0.001, pg); continue;
-      }
-      if (z.inner) rect(u0, u1, v0, v1, z.inner, 0.003, pg, zb);
-      put(pg, box(c.w + mw, mw, md, mould), (u0 + u1) / 2, v1, zz);
-      put(pg, box(c.w + mw, mw, md, mould), (u0 + u1) / 2, v0, zz);
-      put(pg, box(mw, v1 - v0, md, mould), u0, (v0 + v1) / 2, zz);
-      put(pg, box(mw, v1 - v0, md, mould), u1, (v0 + v1) / 2, zz);
+    const plain = defaultFinish({ color: col });
+    const shopM = style === 'mould' && fr.moulding, mw = shopM ? shopM.face : 0.035, md = shopM ? shopM.depth : 0.016;   // a shop's moulding at its own size
+    const pg = new THREE.Group();
+    pg.userData.frameId = fr.id; pg.userData.roomId = R.id;
+    g.add(pg);
+    const u0 = fr.u, u1 = fr.u + fr.w, v0 = fr.v, v1 = fr.v + fr.h, zz = 0.001 + md / 2, zb = { u0: 0, u1: len, v0, v1 };
+    const ry = Math.min(fr.w / 2, fr.h * 0.45);
+    put(pg, new THREE.Mesh(new THREE.PlaneGeometry(fr.w, fr.h), pickMat), (u0 + u1) / 2, (v0 + v1) / 2, 0.004);
+    if (style === 'soft') {                 // upholstered pads with rounded corners
+      const pad = new THREE.Mesh(new RoundedBoxGeometry(fr.w, fr.h, 0.032, 4, Math.min(0.05, fr.w / 2 - 0.001)), fr.inner && fr.inner.type === 'paint' ? std(fr.inner.color, 0.95) : mould);
+      pad.position.set((u0 + u1) / 2, (v0 + v1) / 2, 0.016); pad.castShadow = true; pad.receiveShadow = true;
+      pg.add(pad); continue;
     }
+    if (style === 'tops') { shapeFill(archShape(u0, u1, v0, v1, ry), fr.inner || plain, 0.003, pg, zb); continue; }
+    if (style === 'arch') {                 // moulding that follows a round-topped frame
+      if (fr.inner) shapeFill(archShape(u0, u1, v0, v1, ry), fr.inner, 0.003, pg, zb);
+      const outer = archShape(u0 - mw / 2, u1 + mw / 2, v0 - mw / 2, v1 + mw / 2, ry + mw / 2);
+      outer.holes.push(archShape(u0 + mw / 2, u1 - mw / 2, v0 + mw / 2, v1 - mw / 2, Math.max(0.01, ry - mw / 2)));
+      solid(outer, mould, 0.016, 0.001, pg); continue;
+    }
+    if (fr.inner) rect(u0, u1, v0, v1, fr.inner, 0.003, pg, zb);
+    put(pg, box(fr.w + mw, mw, md, mould), (u0 + u1) / 2, v1, zz);
+    put(pg, box(fr.w + mw, mw, md, mould), (u0 + u1) / 2, v0, zz);
+    put(pg, box(mw, fr.h, md, mould), u0, (v0 + v1) / 2, zz);
+    put(pg, box(mw, fr.h, md, mould), u1, (v0 + v1) / 2, zz);
   }
   if (cfg.layout === 'split' && cfg.rail && cfg.split < hMax - 0.03)
     railAt(cfg.split, cfg.trim ? (() => { const m = std(cfg.trim, 0.5); m.userData.own = true; return m; })() : M.base);
@@ -315,11 +309,11 @@ function frameSpan(cfg, key, hMax) {
   const h = Math.min(z.panelH, e1 - e0), m = Math.min(Math.max((def[0] + def[1]) / 2, e0 + h / 2), e1 - h / 2);
   return [m - h / 2, m + h / 2];
 }
-function mouldColor(z) {
-  if (z.mould) return z.mould;
+/* A moulding's colour: its own, or the wall's where it sits (z: that part of the wall); padded and painted panels a shade darker so they show. */
+function frameColor(fr, z) {
+  if (fr.mould) return fr.mould;
   const base = z.f.type === 'paint' || z.f.type === 'panel' ? z.f.color : '#f6f5f1';
-  // frames match the wall; padded and painted panels are a shade darker so they show
-  return z.style === 'soft' || z.style === 'tops' ? '#' + new THREE.Color(base).multiplyScalar(0.84).getHexString() : base;
+  return fr.style === 'soft' || fr.style === 'tops' ? '#' + new THREE.Color(base).multiplyScalar(0.84).getHexString() : base;
 }
 /* Round-topped panel outline (a rectangle with a half ellipse on top). */
 function archShape(u0, u1, v0, v1, ry) {

@@ -22,6 +22,7 @@ const FIN_TYPES = [['paint', 'Paint'], ['pattern', 'Pattern'], ['panel', 'Panell
 const PATTERNS = { stars: 'Stars', dots: 'Dots', stripes: 'Stripes', gingham: 'Gingham', waves: 'Waves' };
 const RAIL_STYLES = [['straight', 'Straight'], ['scallop', 'Scallops'], ['scallop-down', 'Scallop border'], ['wave', 'Wave']];
 const FRAME_STYLES = [['mould', 'Frames'], ['arch', 'Arches'], ['soft', 'Padded'], ['tops', 'Painted']];
+const FRAME_NAMES = { mould: 'Frame', arch: 'Arch', soft: 'Padded panel', tops: 'Painted panel' };
 
 /* ---------- Wall finishes ---------- */
 function defaultFinish(over) {
@@ -36,7 +37,7 @@ function cleanPaint(m) {
 }
 /* Paints that are the same purchase: the same product, and for a mixed one the same colour code. */
 const paintKey = (m) => m.ref + (m.mix ? '|' + String(m.code || '').trim().toLowerCase() : '');
-const defaultZone = (over) => ({ f: defaultFinish(), frames: false, style: 'mould', inner: null, mould: null, panelW: 0.7, panels: null, gap: null, panelH: null, moulding: null, ...over });
+const defaultZone = (over) => ({ f: defaultFinish(), ...over });       // a wall, or one part of a split wall: its finish (mouldings are the room's own objects)
 const defaultWall = () => ({ layout: 'whole', split: 1.0, rail: true, trim: null, railStyle: 'straight', railSize: 0.09, railM: null, lo: defaultZone(), hi: defaultZone() });
 function cleanImg(m) {
   if (!m || typeof m !== 'object' || !BLOB.test(m.src || '')) return null;
@@ -60,9 +61,57 @@ function cleanFinish(src, def) {
 const cleanPanels = (ps) => (Array.isArray(ps) ? ps.filter(q => q && typeof q.u === 'number' && typeof q.w === 'number' && q.w > 0.05 && q.u >= 0).slice(0, 24).map(q => ({ u: q.u, w: q.w })) : null);
 function cleanZone(z, def) {
   z = z && typeof z === 'object' ? z : {};
-  return { f: cleanFinish(z.f, def.f), frames: !!z.frames, style: FRAME_STYLES.some(([k]) => k === z.style) ? z.style : 'mould',
-    inner: z.inner ? cleanFinish(z.inner, defaultFinish()) : null, mould: HEX.test(z.mould || '') ? z.mould : null,
-    panelW: num(z.panelW, 0.3, 2, 0.7), panels: cleanPanels(z.panels), gap: num(z.gap, 0, 1, null), panelH: num(z.panelH, 0.1, 4, null), moulding: cleanMoulding(z.moulding) };
+  return { f: cleanFinish(z.f, def.f) };
+}
+/* ---------- Mouldings ----------
+   Each moulding is an object of its room (room.frames): a frame, an arch, a padded or a painted panel on a wall. Its place is its own:
+   the wall, u from the wall's left end facing it to its left edge, v from the floor to its bottom edge. The rest (LINKED: its kind,
+   size, shop's moulding, colour and the finish inside) it shares with the copies linked to it, the frames with the same link, in any
+   room of the home: change one and they all change (syncLinked in the studio; cleanHome keeps them alike). */
+const LINKED = ['style', 'w', 'h', 'moulding', 'mould', 'inner'];
+const frameLen = (r, wid) => (wid === 'back' || wid === 'front' ? r.w : r.l);
+function cleanFrame(f, r) {
+  if (!f || typeof f !== 'object' || !WALL_IDS.includes(f.wall)) return null;
+  const len = frameLen(r, f.wall), idOk = (v) => /^[\w-]{1,40}$/.test(v || '');
+  const w = Math.min(num(f.w, 0.05, 15, 0.6), len), h = Math.min(num(f.h, 0.05, 5, 0.6), r.h);
+  return { id: idOk(f.id) ? f.id : newId('f'), link: idOk(f.link) ? f.link : newId('k'), wall: f.wall,
+    u: clamp(num(f.u, -1, 16, 0), 0, Math.max(0, len - w)), v: clamp(num(f.v, -1, 6, 0.2), 0, Math.max(0, r.h - h)), w, h,
+    style: FRAME_NAMES[f.style] ? f.style : 'mould', moulding: cleanMoulding(f.moulding), mould: HEX.test(f.mould || '') ? f.mould : null,
+    inner: f.inner ? cleanFinish(f.inner, defaultFinish()) : null };
+}
+/* Make frame f like frame a (they're linked): the shared values copied, its own place kept inside its wall. */
+function copyLinked(a, f, r) {
+  for (const k of LINKED) f[k] = a[k] && typeof a[k] === 'object' ? JSON.parse(JSON.stringify(a[k])) : a[k];
+  const len = frameLen(r, f.wall);
+  f.w = Math.min(f.w, len); f.h = Math.min(f.h, r.h);
+  f.u = clamp(f.u, 0, Math.max(0, len - f.w)); f.v = clamp(f.v, 0, Math.max(0, r.h - f.h));
+}
+/* A part of a wall filled with mouldings in the stretches between its windows and doors, at the height the part leaves for them:
+   copies linked together, one link per width (those beside a window can be narrower). Adding mouldings to a part does this; so does
+   opening a home saved before mouldings were objects, from the setting its parts kept (their frames' kind, moulding, colour and
+   inside, and a width to fill with or the frames' own places), so they land where they used to be drawn. */
+function fillFrames(r, wid, key, look, panelW = 0.7, panelH = null, panels = null) {
+  const cfg = r.walls[wid], len = frameLen(r, wid), out = [];
+  const blocks = r.openings.filter(o => o.wall === wid).map(o => ({ u0: o.off, u1: o.off + o.w, v0: o.kind === 'door' ? 0 : o.y, v1: (o.kind === 'door' ? 0 : o.y) + o.h }));
+  const [v0, v1] = frameSpan({ ...cfg, [key]: { panelH } }, key, r.h);
+  if (v1 - v0 < 0.15) return out;
+  const bl = blocks.filter(o => o.v0 < v1 && o.v1 > v0);
+  const cols = panels ? panels.filter(c => c.u + c.w <= len + 0.001 && !bl.some(o => c.u < o.u1 + 0.02 && c.u + c.w > o.u0 - 0.02)) : autoColumns(len, blocks, v0, v1, panelW);
+  const links = new Map();
+  for (const c of cols) {
+    const k = Math.round(c.w * 1000);
+    if (!links.has(k)) links.set(k, newId('k'));
+    out.push(cleanFrame({ ...look, wall: wid, u: c.u, v: v0, w: c.w, h: v1 - v0, link: links.get(k) }, r));
+  }
+  return out.filter(Boolean);
+}
+function legacyFrames(r, wid, raw) {
+  if (!raw || typeof raw !== 'object') return [];
+  return (r.walls[wid].layout === 'split' ? ['lo', 'hi'] : ['lo']).flatMap(key => {
+    const z = raw[key];
+    if (!z || typeof z !== 'object' || !z.frames) return [];
+    return fillFrames(r, wid, key, { style: z.style, moulding: z.moulding, mould: z.mould, inner: z.inner }, num(z.panelW, 0.3, 2, 0.7), num(z.panelH, 0.1, 4, null), cleanPanels(z.panels));
+  });
 }
 function cleanWall(w) {
   const d = defaultWall(); w = w && typeof w === 'object' ? w : {};
@@ -131,6 +180,8 @@ function cleanRoom(src) {
       y: o.kind === 'door' ? 0 : Math.min(num(o.y, 0, r.h, 0.9), Math.max(0, r.h - h)) });
   }
   for (const wid of WALL_IDS) r.walls[wid] = cleanWall(src.walls && src.walls[wid]);
+  r.frames = Array.isArray(src.frames) ? src.frames.slice(0, 200).map(f => cleanFrame(f, r)).filter(Boolean)
+    : WALL_IDS.flatMap(wid => legacyFrames(r, wid, src.walls && src.walls[wid]));          // a home saved before mouldings were objects
   for (const it of Array.isArray(src.items) ? src.items.slice(0, 200) : []) {
     if (!it || typeof it !== 'object') continue;
     const p = cleanProduct(it.p);
@@ -185,6 +236,7 @@ function exampleFlat(name, h) {
   bed.openings = [{ id: newId('o'), kind: 'window', wall: 'right', off: 0.3, w: 1.3, h: 1.4, y: 0.85 }];
   const nursery = roomFrom('nursery', 'Nursery', 3.0, 3.0, h, 2.2, 2.0);
   nursery.openings = [{ id: newId('o'), kind: 'window', wall: 'right', off: 0.9, w: 1.14, h: 1.4, y: 0.93 }, { id: newId('o'), kind: 'radiator', wall: 'right', off: 1.1, w: 0.77, h: 0.6, y: 0.12 }];
+  nursery.frames = ['hi', 'lo'].flatMap(key => fillFrames(nursery, 'right', key, { style: 'mould' }));     // laid out again round the window it has now
   nursery.items = nursery.items.map(it => { const c = clampItem(nursery, it); return { ...it, ...c }; });
   const rooms = [hall, living, kitchen, bed, nursery];
   for (const [r, side] of [[living, 'left'], [kitchen, 'left'], [bed, 'right'], [nursery, 'right']]) { const d = doorBetween(hall, r, side); if (d) r.openings.push(d); }
@@ -202,6 +254,11 @@ function cleanHome(src) {
   const rooms = Array.isArray(src.rooms) && src.rooms.length ? src.rooms.slice(0, 24).map(cleanRoom) : [cleanRoom({ ...src, x: 0, z: 0 })];
   const ids = new Set();
   for (const r of rooms) { if (ids.has(r.id)) r.id = newId('room'); ids.add(r.id); delete r.evening; delete r.published; delete r.cover; delete r.updatedAt; delete r.from; delete r.notes; }
+  const fids = new Set(), firsts = new Map();               // linked copies stay alike: each link as its first copy
+  for (const r of rooms) for (const f of r.frames) {
+    if (fids.has(f.id)) f.id = newId('f'); fids.add(f.id);
+    if (firsts.has(f.link)) copyLinked(firsts.get(f.link), f, r); else firsts.set(f.link, f);
+  }
   return { v: 2, name: str(src.name, 60, rooms[0].name), rooms, evening: !!src.evening, updatedAt: num(src.updatedAt, 0, 1e14, 0), published: !!src.published,
     cover: ASSET.test(src.cover || '') ? src.cover : null,
     from: src.from && typeof src.from === 'object' ? { owner: str(src.from.owner, 80), id: str(src.from.id, 60), name: str(src.from.name, 60) } : null };
