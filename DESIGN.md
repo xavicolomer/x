@@ -12,12 +12,12 @@ Which control does which job follows the shared "one job, one control" standard 
 | `--surface` | `#ffffff` | Panels, cards, dialogs |
 | `--surface-2` | `#f4f4f2` | Fills: inputs, idle chips, picture backgrounds, segmented tracks |
 | `--scene` | `#f2f2f0` | Behind the 3D room |
-| `--fg` | `#141414` | Text |
+| `--fg` | `#141414` | Text, and measurements drawn in the 3D (Measure, a dragged window's distances): ink, as on a drawing |
 | `--muted` | `#6a6a66` | Secondary text (5.5:1 on white) |
 | `--line` | `#e7e7e4` | Borders and dividers |
 | `--accent` | `#2c6b58` | The one accent: primary buttons, selection, focus, links |
 | `--accent-soft` | `#e8f2ee` | Selected tabs and tags |
-| `--clay` | `#a5543f` | Prices, and the Measure and Paint tools in the 3D |
+| `--clay` | `#a5543f` | Prices, and the Paint tool's surface tints in the 3D |
 | `--bad` | `#b2391b` | Destructive actions and errors |
 
 White only: there is no dark theme.
@@ -69,6 +69,7 @@ Geist for everything, Geist Mono for numbers that must line up (sizes, prices, s
   - **Fit** (corner marks), bottom right: frames the room again.
   - **Panel:** at the left on wide screens (landscape phones too). On phones (760 px and narrower) it is a bottom sheet with a handle and three heights: low (the handle and one line saying what's open: the room's size, a wall's finish, a piece, the measurement or the tins), half, and full (up to the top bar). It opens low. A wall or a piece tapped raises it to half; empty floor lowers it and lets go of what was picked; Measure and Paint lower it; turning the room never moves it. Tapping the handle steps it up (and from full, back to low); the handle, the line and the tabs can also be dragged.
   - **Camera:** frames the room in the part of the screen the bar and the panel leave clear (the view's centre slides with `setViewOffset`; the distance fits the room's box from the usual high front-left view). When the sheet moves, the room glides to fit again, until someone turns or zooms it; then only its centre moves. A sheet above half covers the room anyway, so the room stays framed for half.
+  - **Windows, doors and radiators** are picked and dragged in the room like furniture, but they only go on walls. A tap opens the opening's page. A drag slides it along its wall, and on round a corner onto the next wall (in 3D, the walls standing full height; in the plan, any of the four). It moves by the centimetre, settles in the middle of the wall within 4 cm of it, and stays inside the wall; windows and radiators move up and down too, doors stand on the floor. While it moves, its distances show as lines with a tick at each end and a label in cm, in ink like the Measure tool (black reads on any paint, paper or wood; green would look like a control): left and right to the wall's ends, and in 3D down to the floor (not for a door) and up to the ceiling. On release it is saved and its page shows the new place.
   - **Jobs** (UI_CONTROLS.md): navigation is the back arrow, the rooms menu and the panel's one tab row; the display option, Plan view, is a round toggle rather than a segmented control, so that everything floating over the room reads as one column of round buttons; the one setting is the Evening light toggle, and Measure and Paint are tool toggles in the same style; inputs are the panel's fields and pickers; actions are the one primary button, the ⋯ menu, Fit and the panel's buttons.
 - **Picker field:** the one input for choosing a material: a floor, a paint, a wallpaper, a moulding. Always there, whether or not a shop lists that material. A field with the chosen product's picture, name, shop and price, and a chevron; with no shop's product chosen, it says what you have instead (a Nido floor, your own colour, any moulding). It opens the picker dialog. Choices that aren't a shop's sit in the same picker: the floors Nido draws, your uploaded wallpaper images and an upload card, "your own colour". Paint has no Nido list: the provisional Nido Paint brand stands in (docs/CATALOG.md).
 - **Picker dialog:** title and Close, a search box and one row of filter chips (what tells that material's products apart: surface, shape, ready-made or mixed), then option cards. A card is one button: tap it to choose and close. The chosen card has an `--accent` border and a "✓ Chosen" tag. "Not from a shop" is the first card where it makes sense. Add furniture is a picker dialog too.

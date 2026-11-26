@@ -841,6 +841,21 @@ engineHooks.onWall = (roomId, wid) => {
   setNode('wall:' + wid); studio.tab = 'room'; renderStudio(); $('pane').scrollTop = 0;
   raiseSheet();
 };
+/* A window, door or radiator tapped in the room opens its own page (and raises the sheet on phones). */
+engineHooks.onOpening = (roomId, id) => {
+  if (!studio || studio.mode !== 'edit') return;
+  if (!studio.room || studio.room.id !== roomId) focusRoom(roomId);
+  if (selId) selectItem(null);
+  setNode('op:' + id); studio.tab = 'room'; renderStudio(); $('pane').scrollTop = 0;
+  raiseSheet();
+};
+/* One dragged along the walls and let go: saved, and its page shows where it is now. The sheet stays where it was, so the room
+   stays in view. */
+engineHooks.onOpMoved = (roomId, id) => {
+  if (!studio || !studio.room || studio.room.id !== roomId) return;
+  setNode('op:' + id); studio.tab = 'room';
+  changed(false); renderStudio();
+};
 /* Empty floor tapped on a phone: whatever was picked is let go (a piece, a wall's page) and the sheet goes back down. */
 engineHooks.onBlankTap = () => {
   if (!studio || !isSheet()) return;
@@ -891,7 +906,7 @@ function syncTools() {
   $('st-hint').textContent = tool === 'measure' ? 'Tap a face, then a second one · drag to look around'
     : tool === 'paint' ? 'Tap walls or furniture to add them · tap again to take one off'
     : !r ? (edit && h.rooms.length > 1 ? 'Tap a room to work on it on its own · in Plan view, drag rooms to arrange them' : 'Tap a room to see it on its own · drag to look around')
-    : edit ? 'Drag furniture to move it · tap a wall to change its finish · drag empty space to look around' : 'Drag to look around · tap a piece of furniture to see what it is';
+    : edit ? 'Drag furniture, windows and doors to move them · tap a wall to change its finish · drag empty space to look around' : 'Drag to look around · tap a piece of furniture to see what it is';
 }
 /* Measure and Paint are toggles: tapping the one that's on goes back to selecting (as does its panel's ×). */
 $('st-tools').addEventListener('click', (e) => { const b = e.target.closest('[data-tool]'); if (b && studio) useTool(tool === b.dataset.tool ? 'select' : b.dataset.tool); });
@@ -1164,7 +1179,7 @@ function opEditor(id) {
       ${numField('Height', 'op', cm(o.h), `data-id="${o.id}" data-k="h" min="10" step="1"`)}
       ${o.kind === 'door' ? '' : numField(o.kind === 'window' ? 'Sill height' : 'From the floor', 'op', cm(o.y), `data-id="${o.id}" data-k="y" min="0" step="1"`)}
     </div>
-    <p class="note">“From the left” is measured facing the wall.</p>
+    <p class="note">“From the left” is measured facing the wall. You can also drag it in the room, along this wall or onto another: its distances to the wall's ends, the floor and the ceiling show as it moves.</p>
     <div><button type="button" class="btn small danger" data-act="opdel" data-id="${o.id}">Remove this ${OP_KINDS[o.kind].toLowerCase()}</button></div>`;
 }
 
