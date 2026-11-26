@@ -24,7 +24,7 @@ const { chromium } = require('playwright');
     await c(page, '[data-new-room]'); await w(page, 300); await c(page, '[data-tpl="flat"]'); await page.fill('#nr-name', 'Piso offline');
     await c(page, '#nr button[type=submit]'); await w(page, 4500);
     await page.selectOption('#st-room', await page.evaluate(() => [...document.querySelectorAll('#st-room option')].find(o => o.textContent === 'Nursery').value)); await w(page, 1500);
-    await c(page, '[data-tab="furniture"]'); await w(page, 300); await c(page, '[data-act="addfurn"]'); await w(page, 500);
+    await c(page, '[data-act="addfurn"]'); await w(page, 500);        // the Room tab's tree: + Add furniture
     await page.fill('#pick-q', 'gulliver'); await page.dispatchEvent('#pick-q', 'input'); await w(page, 300);
     await c(page, '#pick-grid [data-add^="shop:ikea-es"]'); await c(page, '#dlg [data-close]'); await w(page, 1200);
     await page.screenshot({ path: path.join(out, 'o1-editor.png') });
@@ -49,7 +49,7 @@ const { chromium } = require('playwright');
   await run('B', async (page) => {
     await page.goto(file + '#rooms'); await w(page, 2500);
     await page.setInputFiles('#import-file', saved); await w(page, 4500);
-    console.log('B opened:', await page.inputValue('#st-name'), '|', await page.textContent('#st-size'));
+    console.log('B opened:', await page.textContent('#st-title'), '|', await page.textContent('#peek-s'));
     await c(page, '#st-back'); await w(page, 800);
     console.log('B card has picture:', await page.evaluate(() => !!document.querySelector('#my-rooms img[src^="blob:"]')));
     await page.screenshot({ path: path.join(out, 'o3-imported.png') });

@@ -153,24 +153,56 @@ h2 { margin: 0; font-family: var(--font-display); font-size: 19px; font-weight: 
 .pickf .tx small { color: var(--muted); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pickf .chev { color: var(--muted); flex: none; }
 
-/* ---------- Studio (3D) ---------- */
-#studio { position: fixed; inset: 0; z-index: 40; background: var(--scene); }
+/* ---------- Studio (3D) ----------
+   The room fills the screen and the controls float over it: one top bar, the view switch and round toggles at the top right, Fit at
+   the bottom right, and the panel at the left (a bottom sheet on phones). The camera frames the room in what they leave clear. */
+#studio { position: fixed; inset: 0; z-index: 40; background: var(--scene); --gut: 12px; --ease: cubic-bezier(.2, .8, .2, 1); }
 #stage { position: absolute; inset: 0; }
 #stage canvas { display: block; outline: none; touch-action: none; }
-.sbar { position: absolute; top: calc(10px + env(safe-area-inset-top, 0px)); left: max(12px, env(safe-area-inset-left, 0px)); right: max(12px, env(safe-area-inset-right, 0px));
-  display: flex; gap: 8px; align-items: center; z-index: 5; pointer-events: none; flex-wrap: wrap; }
+.sbar { position: absolute; top: calc(10px + env(safe-area-inset-top, 0px)); left: max(var(--gut), env(safe-area-inset-left, 0px)); right: max(var(--gut), env(safe-area-inset-right, 0px));
+  display: flex; gap: 8px; align-items: center; z-index: 6; pointer-events: none; }
 .sbar > * { pointer-events: auto; }
 .chipbox { background: var(--surface); border-radius: var(--r-panel); box-shadow: var(--elev); display: flex; align-items: center; gap: 4px; padding: 4px; }
+.sbar .btn { min-height: 44px; padding: 0 16px; font-size: 13px; }
+.stitle { min-width: 0; padding: 0 4px; }
+.sacts { display: flex; align-items: center; gap: 8px; }
+/* the room's name, and under it "Saved" or whose room it is; with several rooms it's the face of the rooms menu (a select laid over it) */
+.stname { position: relative; min-width: 0; display: flex; flex-direction: column; justify-content: center; min-height: 44px; padding: 0 6px; border-radius: var(--r-panel); }
+.stname-t { display: flex; align-items: center; gap: 4px; min-width: 0; font-weight: 800; font-size: 15px; letter-spacing: -.01em; line-height: 1.25; }
+.stname-t > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stname-t .caret { flex: none; color: var(--muted); display: none; }
+.stname-s { font-size: 12px; color: var(--muted); line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stname select { display: none; position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; font-size: 16px; }
+.stname.rooms select { display: block; }
+.stname.rooms .caret { display: block; }
+.stname.rooms:hover { background: var(--surface-2); }
+.stname:has(select:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+.sbar .spacer { flex: 1; }
+.menuwrap { position: relative; display: flex; }
+.menu [role="menuitem"].danger { color: var(--bad); }
+.lbl-short { display: none; }
 .seg { display: inline-flex; background: var(--surface-2); border-radius: var(--r-btn); padding: 2px; gap: 2px; }
 .seg button { border: 0; background: transparent; padding: 5px 12px; border-radius: var(--r-btn); font-weight: 700; cursor: pointer; color: var(--muted); font-size: 12.5px; }
 .seg button[aria-pressed="true"] { background: var(--surface); color: var(--fg); box-shadow: 0 1px 2px rgba(0,0,0,.12); }
 .seg.wide { display: flex; } .seg.wide button { flex: 1; }
-.rname { border: 0; background: transparent; font-weight: 800; font-size: 15px; padding: 4px 8px; min-width: 0; width: 220px; border-radius: var(--r-btn); }
-.rname:focus { background: var(--surface-2); outline: none; }
-.sbar .spacer { flex: 1; }
-.save-state { font-size: 12px; color: var(--muted); padding: 0 6px; }
-.side { position: absolute; z-index: 4; top: calc(var(--bar, 46px) + 20px + env(safe-area-inset-top, 0px)); left: max(12px, env(safe-area-inset-left, 0px)); bottom: calc(12px + env(safe-area-inset-bottom, 0px)); width: 340px;
+/* top right, under the bar, a column of round toggles: Plan view on its own (how the room is shown), then the evening light and the tools */
+.sview { position: absolute; z-index: 5; top: calc(var(--bar, 44px) + 26px + env(safe-area-inset-top, 0px)); right: max(var(--gut), env(safe-area-inset-right, 0px));
+  display: flex; flex-direction: column; align-items: flex-end; gap: 16px; pointer-events: none; }
+.sview > * { pointer-events: auto; }
+.rcol { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+.rbtn { position: relative; flex: none; width: 44px; height: 44px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 50%; background: var(--surface); color: var(--fg); box-shadow: var(--elev); cursor: pointer; }
+.rbtn:hover, .rbtn[aria-expanded="true"] { background: var(--surface-2); }
+.rbtn[aria-pressed="true"], .rbtn.primary { background: var(--accent); color: var(--accent-ink); }
+.rbtn.primary:hover { filter: brightness(1.06); }
+.rbtn:disabled { opacity: .5; cursor: not-allowed; }
+.rbtn[aria-pressed="true"] .fill-on { fill: currentColor; }
+/* their names, beside them until the first tap: icons alone are hard to guess on a phone, where nothing shows on hover */
+#studio.named .rbtn[data-tip]::before { content: attr(data-tip); position: absolute; right: calc(100% + 8px); top: 50%; transform: translateY(-50%); white-space: nowrap; pointer-events: none;
+  background: var(--fg); color: var(--bg); font-size: 12.5px; font-weight: 700; padding: 5px 10px; border-radius: var(--r-btn); }
+.fit { position: absolute; z-index: 5; right: max(var(--gut), env(safe-area-inset-right, 0px)); bottom: calc(var(--gut) + env(safe-area-inset-bottom, 0px)); }
+.side { position: absolute; z-index: 4; top: calc(var(--bar, 44px) + 20px + env(safe-area-inset-top, 0px)); left: max(var(--gut), env(safe-area-inset-left, 0px)); bottom: calc(12px + env(safe-area-inset-bottom, 0px)); width: 340px;
   background: var(--surface); border-radius: var(--r-panel); box-shadow: var(--elev); display: flex; flex-direction: column; overflow: hidden; }
+.side .grab, .side .peek { display: none; }       /* the sheet's handle and its one-line summary: phones only */
 .side .tabs { display: flex; gap: 2px; padding: 6px; border-bottom: 1px solid var(--line); }
 .side .tabs button { flex: 1; border: 0; background: transparent; padding: 7px 4px; border-radius: var(--r-btn); font-weight: 700; color: var(--muted); cursor: pointer; font-size: 12.5px; }
 .side .tabs button[aria-selected="true"] { background: var(--accent-soft); color: var(--accent); }
@@ -218,7 +250,8 @@ h2 { margin: 0; font-family: var(--font-display); font-size: 19px; font-weight: 
 .thumbs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
 .thumbs button, .thumbs label { aspect-ratio: 1; border-radius: var(--r-media); border: 1px solid var(--line); background: var(--surface-2) center / cover no-repeat; cursor: pointer; padding: 0; display: grid; place-items: center; color: var(--muted); font-size: 20px; }
 .thumbs button[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--accent); }
-.props { position: absolute; z-index: 4; right: max(12px, env(safe-area-inset-right, 0px)); top: calc(var(--bar, 46px) + 20px + env(safe-area-inset-top, 0px)); width: 290px; max-height: calc(100% - var(--bar, 46px) - 44px); overflow: auto;
+/* a piece of furniture, or Measure and Paint: at the right, beside the round toggles (in the sheet on phones) */
+.props { position: absolute; z-index: 4; right: calc(max(var(--gut), env(safe-area-inset-right, 0px)) + 56px); top: calc(var(--bar, 44px) + 20px + env(safe-area-inset-top, 0px)); width: 290px; max-height: calc(100% - var(--bar, 44px) - 44px); overflow: auto;
   background: var(--surface); border-radius: var(--r-panel); box-shadow: var(--elev); padding: 14px; display: flex; flex-direction: column; gap: 10px; }
 .props h3 { margin: 0; font-size: 15px; }
 .kv { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; font-size: 13px; }
@@ -233,12 +266,34 @@ h2 { margin: 0; font-family: var(--font-display); font-size: 19px; font-weight: 
 .surf .tx small { color: var(--muted); font-size: 11.5px; }
 .hint { position: absolute; z-index: 3; bottom: calc(14px + env(safe-area-inset-bottom, 0px)); left: 50%; transform: translateX(-50%); color: var(--muted); font-size: 12px; background: var(--surface); border-radius: var(--r-btn); padding: 5px 12px; box-shadow: var(--elev); white-space: nowrap; }
 @media (max-width: 760px) {
-  .side { top: auto; left: 0; right: 0; bottom: 0; width: auto; height: 46%; border-radius: var(--r-panel) var(--r-panel) 0 0; padding-bottom: env(safe-area-inset-bottom, 0px); }
-  .props { left: max(12px, env(safe-area-inset-left, 0px)); right: max(12px, env(safe-area-inset-right, 0px)); width: auto; top: auto; bottom: calc(46% + 8px); max-height: min(34%, calc(54% - var(--bar, 46px) - 36px)); }
-  /* Measure and Paint take the bottom sheet's place, so the room above stays free to tap */
-  .props.tool { left: 0; right: 0; bottom: 0; height: 46%; max-height: none; border-radius: var(--r-panel) var(--r-panel) 0 0; padding-bottom: calc(14px + env(safe-area-inset-bottom, 0px)); z-index: 5; }
+  #studio { --gut: 10px; }
+  .sbar { gap: 6px; }
+  /* The bottom sheet: low (the handle and one line saying what's open), half, or full. A tapped wall or piece raises it to half;
+     empty floor lowers it; turning the room never moves it. A piece's panel and the tools live in it too. It is always full height
+     and slides down (transform, so moving it never lays its content out again): the script sets --sheet-full, --sheet-h (what
+     shows, following a finger) and --sheet-rest (where it rests); its scrolling parts pad their ends by what's below the screen. */
+  .side { top: auto; left: 0; right: 0; bottom: 0; width: auto; height: var(--sheet-full); transform: translateY(calc(var(--sheet-full) - var(--sheet-h)));
+    border-radius: var(--r-panel) var(--r-panel) 0 0; padding-bottom: env(safe-area-inset-bottom, 0px); z-index: 5; transition: transform .28s var(--ease); }
+  .side .grab { display: block; flex: none; position: relative; width: 100%; height: 44px; padding: 0; border: 0; background: transparent; cursor: grab; touch-action: none; }
+  .side .grab span { position: absolute; left: 50%; top: 20px; width: 36px; height: 4px; margin-left: -18px; border-radius: 2px; background: #d4d4d0; }
+  .side .peek { flex: none; align-items: center; gap: 10px; width: 100%; min-height: 52px; padding: 0 18px 8px; border: 0; background: transparent; text-align: left; font: inherit; color: inherit; cursor: pointer; touch-action: none; }
+  .side .peek .tx { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .side .peek b { font-size: 15px; font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .side .peek small { color: var(--muted); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .side .peek svg { flex: none; color: var(--muted); }
+  .side[data-sheet="low"] .peek { display: flex; }
+  .side[data-sheet="low"] .tabs, .side[data-sheet="low"] .pane, .side[data-sheet="low"] .props { display: none; }
+  .side .tabs { touch-action: none; }
+  .side .tabs button { min-height: 44px; }
+  .side.with-props .tabs, .side.with-props .pane { display: none; }
+  .side .props { position: static; width: auto; max-height: none; flex: 1; min-height: 0; overflow: auto; box-shadow: none; border-radius: 0; padding: 4px 16px 16px; }
+  .side .pane, .side .props { padding-bottom: calc(16px + var(--sheet-full) - var(--sheet-rest)); }
+  .fit { bottom: 12px; transform: translateY(calc(-1 * var(--sheet-h))); transition: transform .28s var(--ease), opacity .2s; }
+  #studio.dragging .side, #studio.dragging .fit, #studio.still .side, #studio.still .fit { transition: none; }      /* following a finger; opening */
+  #studio[data-sheet="full"] .fit { opacity: 0; pointer-events: none; }
   .hint { display: none; }
-  .rname { width: 140px; }
+  .lbl-long { display: none; }
+  .lbl-short { display: inline; }
   .fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   /* pickers take the whole screen on phones */
   .dlg-back.full { padding: 0; }
@@ -351,24 +406,37 @@ h2 { margin: 0; font-family: var(--font-display); font-size: 19px; font-weight: 
 
 <div id="studio" hidden>
   <div id="stage"></div>
+  <!-- One bar of round buttons: back (just the arrow), the room's name (a menu of the home's rooms when it has several), more, and
+       the one primary action (Publish, an arrow). -->
   <div class="sbar">
-    <div class="chipbox">
-      <button type="button" class="btn small" id="st-back" aria-label="Close room">← Back</button>
-      <input class="rname" id="st-name" aria-label="Home name" maxlength="60">
-      <label class="in" style="border:0;background:var(--surface-2)"><select id="st-room" aria-label="Room to work on" style="font-weight:700;padding:5px 8px"></select></label>
-      <span class="pill" id="st-size"></span>
-    </div>
-    <div class="chipbox">
-      <div class="seg" role="group" aria-label="View"><button type="button" id="v-3d" aria-pressed="true">3D</button><button type="button" id="v-plan" aria-pressed="false">Plan</button></div>
-      <div class="seg" role="group" aria-label="Time of day"><button type="button" id="t-day" aria-pressed="true">Day</button><button type="button" id="t-eve" aria-pressed="false">Evening</button></div>
-    </div>
-    <div class="chipbox">
-      <div class="seg" role="group" aria-label="Tool" id="st-tools"><button type="button" data-tool="select" aria-pressed="true">Select</button><button type="button" data-tool="measure" aria-pressed="false">Measure</button><button type="button" data-tool="paint" aria-pressed="false">Paint</button></div>
+    <button type="button" class="rbtn" id="st-back" aria-label="Back" title="Back"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg></button>
+    <div class="chipbox stitle">
+      <div class="stname" id="st-name">
+        <span class="stname-t"><span id="st-title"></span><svg class="caret" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></span>
+        <span class="stname-s" id="st-sub"></span>
+        <select id="st-room" aria-label="Room to show"></select>
+      </div>
     </div>
     <div class="spacer"></div>
-    <div class="chipbox" id="st-actions"></div>
+    <div class="sacts" id="st-actions"></div>
   </div>
-  <aside class="side" id="side" aria-label="Room panel">
+  <!-- Over the room, top right, a column of round toggles: Plan view (3D when it's off), then the evening light and the tools; Fit at the
+       bottom right. -->
+  <div class="sview">
+    <button type="button" class="rbtn" id="v-plan" aria-pressed="false" aria-label="Plan view" title="Plan view" data-tip="Plan view"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path class="fill-on" d="M3 12h8v9H5a2 2 0 0 1-2-2z"/><path d="M15 3v5"/></svg></button>
+    <div class="rcol" id="st-rcol">
+      <button type="button" class="rbtn" id="t-eve" aria-pressed="false" aria-label="Evening light" title="Evening light" data-tip="Evening light"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path class="fill-on" d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg></button>
+      <div class="rcol" role="group" aria-label="Tools" id="st-tools">
+        <button type="button" class="rbtn" data-tool="measure" aria-pressed="false" aria-label="Measure" title="Measure" data-tip="Measure"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21.3 15.3a2.4 2.4 0 0 1 0 3.4l-2.6 2.6a2.4 2.4 0 0 1-3.4 0L2.7 8.7a2.41 2.41 0 0 1 0-3.4l2.6-2.6a2.41 2.41 0 0 1 3.4 0Z"/><path d="m14.5 12.5 2-2"/><path d="m11.5 9.5 2-2"/><path d="m8.5 6.5 2-2"/><path d="m17.5 15.5 2-2"/></svg></button>
+        <button type="button" class="rbtn" data-tool="paint" aria-pressed="false" aria-label="Paint" title="Paint: how many tins" data-tip="Paint"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="16" height="6" x="2" y="2" rx="2"/><path d="M10 16v-2a2 2 0 0 1 2-2h8a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect width="4" height="6" x="8" y="16" rx="1"/></svg></button>
+      </div>
+    </div>
+  </div>
+  <button type="button" class="rbtn fit" id="st-fit" aria-label="Fit the room in view" title="Fit the room in view" data-tip="Fit the room"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></svg></button>
+  <!-- The panel: at the left on wide screens; on phones a bottom sheet that rests low (a line saying what's open), half or full. -->
+  <aside class="side" id="side" aria-label="Room panel" data-sheet="low">
+    <button type="button" class="grab" id="st-grab" aria-label="Open the panel"><span></span></button>
+    <button type="button" class="peek" id="st-peek"><span class="tx"><b id="peek-t"></b><small id="peek-s"></small></span><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m18 15-6-6-6 6"/></svg></button>
     <div class="tabs" role="tablist" id="side-tabs"></div>
     <div class="pane" id="pane"></div>
   </aside>

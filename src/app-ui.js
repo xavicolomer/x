@@ -641,10 +641,12 @@ function openStudio(st) {
   document.body.classList.add('studio-open');
   $('studio').hidden = false;
   closeDialog();
-  layoutStudio();
+  placeProps();
+  sheetTo('low', 'instant');           // the room first: the sheet waits low and the camera frames what's left
   showHome(st.home, { editable: st.mode === 'edit', focus: studio.room && studio.room.id });
   if (!studio.room) studio.tab = st.mode === 'edit' ? 'flat' : 'list';
   renderStudio();
+  nameTools();
 }
 function openEditor(id, roomId) {
   const h = S.drafts.get(id); if (!h) { toast('That home isn’t here any more.'); return; }
@@ -674,20 +676,142 @@ function closeStudio() {
   setTool('select');
   hideRoom(); studio = null;
   $('studio').hidden = true; $('props').hidden = true;
+  stMenu(false); endNames();
   document.body.classList.remove('studio-open');
   render();
 }
 $('st-back').addEventListener('click', closeStudio);
-function layoutStudio() {
-  const wide = window.innerWidth > 760;
-  padLeft = wide ? 364 : 0;
-  padBottom = wide ? 0 : stage.clientHeight * 0.46;
-  layout();
+
+/* ---------- Layout: the top bar, the panel (a bottom sheet on phones), and the part of the room they leave clear ---------- */
+const studioEl = $('studio'), side = $('side'), studioBar = document.querySelector('#studio .sbar');
+const isSheet = () => window.innerWidth <= 760;
+let sheet = 'low';
+/* The panels the camera keeps the room clear of, in px: the top bar, and the side panel or the sheet. how: 'instant' (opening, a
+   resize), 'live' (the sheet following a finger: the room's centre moves, the framing waits), or nothing (it glides). A sheet
+   higher than half covers the room anyway, so the room stays framed for half. */
+function syncPads(how, sheetPx) {
+  const box = studioEl.getBoundingClientRect(), top = Math.round(studioBar.getBoundingClientRect().bottom - box.top + 8);
+  if (!isSheet()) { setPads(Math.round(side.getBoundingClientRect().right - box.left + 12), top, 0, how); return; }
+  const hs = sheetHeights();
+  setPads(0, top, Math.min(sheetPx ?? hs[sheet], hs.half), how);
 }
-window.addEventListener('resize', () => { if (studio) layoutStudio(); });
-/* The top bar wraps onto more rows on narrow screens: the side and right panels start below it, whatever its height. */
-const studioBar = document.querySelector('#studio .sbar');
-new ResizeObserver(() => $('studio').style.setProperty('--bar', studioBar.offsetHeight + 'px')).observe(studioBar);
+/* The sheet's three resting heights: low shows its handle and one line, half the panel, and full stops under the top bar. */
+function sheetHeights() {
+  const H = studioEl.clientHeight || window.innerHeight, safe = parseFloat(getComputedStyle(side).paddingBottom) || 0;
+  const top = studioBar.getBoundingClientRect().bottom - studioEl.getBoundingClientRect().top;
+  const low = Math.round(96 + safe), half = Math.max(low + 120, Math.round(H * 0.46));
+  return { low, half, full: Math.max(half, Math.round(H - top - 8)) };
+}
+const setSheetPx = (px) => studioEl.style.setProperty('--sheet-h', px + 'px');
+const sheetShown = () => Math.round(studioEl.getBoundingClientRect().bottom - side.getBoundingClientRect().top);    // mid-slide too
+function sheetTo(s, how) {
+  sheet = s;
+  side.dataset.sheet = s; studioEl.dataset.sheet = s;
+  if (isSheet()) {
+    if (how === 'instant') studioEl.classList.add('still');      // opening, or a resize: it takes its place without sliding there
+    const hs = sheetHeights();
+    studioEl.style.setProperty('--sheet-full', hs.full + 'px'); studioEl.style.setProperty('--sheet-rest', hs[s] + 'px');
+    setSheetPx(hs[s]);
+    if (how === 'instant') { void side.offsetHeight; studioEl.classList.remove('still'); }    // laid out at its place first, so nothing slides
+  }
+  $('st-grab').setAttribute('aria-label', s === 'low' ? 'Open the panel' : s === 'half' ? 'Open the panel fully' : 'Lower the panel');
+  syncPads(how);
+}
+const raiseSheet = () => { if (isSheet() && sheet === 'low') sheetTo('half'); };
+/* A piece's panel and the tools' panel float at the right on wide screens; on phones they live in the sheet, in the place of its tabs. */
+function placeProps() {
+  const p = $('props'), home = isSheet() ? side : studioEl;
+  if (p.parentNode !== home) home.appendChild(p);
+  side.classList.toggle('with-props', !p.hidden && home === side);
+}
+window.addEventListener('resize', () => { if (!studio) return; placeProps(); sheetTo(sheet, 'instant'); });
+/* The side panel and the view switch start below the top bar, whatever its height. */
+new ResizeObserver(() => { studioEl.style.setProperty('--bar', studioBar.offsetHeight + 'px'); if (studio) syncPads('instant'); }).observe(studioBar);
+/* Tapping the handle steps the sheet up (low, half, full, then low again); the summary line opens it to half. Dragging the handle,
+   the line or the tabs moves it with the finger; let go and it rests at the nearest height, or the next one along after a quick
+   flick. A drag isn't a tap, so the click after it is swallowed. */
+$('st-grab').addEventListener('click', () => sheetTo(sheet === 'low' ? 'half' : sheet === 'half' ? 'full' : 'low'));
+$('st-peek').addEventListener('click', () => sheetTo('half'));
+let sheetDrag = null, swallowClick = false;
+for (const el of [$('st-grab'), $('st-peek'), $('side-tabs')]) el.addEventListener('pointerdown', (e) => {
+  if (!isSheet() || (e.pointerType === 'mouse' && e.button !== 0)) return;
+  sheetDrag = { id: e.pointerId, el, y0: e.clientY, h0: sheetShown(), hs: sheetHeights(), moved: false, trail: [[e.timeStamp, e.clientY]] };
+});
+document.addEventListener('pointermove', (e) => {
+  const d = sheetDrag; if (!d || e.pointerId !== d.id) return;
+  const dy = e.clientY - d.y0;
+  if (!d.moved) {
+    if (Math.abs(dy) < 6) return;
+    d.moved = true; studioEl.classList.add('dragging');
+    try { d.el.setPointerCapture(e.pointerId); } catch (er) {}
+  }
+  const px = clamp(d.h0 - dy, d.hs.low, d.hs.full), s = px < d.hs.low + 30 ? 'low' : px > d.hs.half + 30 ? 'full' : 'half';
+  setSheetPx(px); side.dataset.sheet = s; studioEl.dataset.sheet = s;
+  d.trail.push([e.timeStamp, e.clientY]); if (d.trail.length > 5) d.trail.shift();
+  syncPads('live', px);
+});
+function sheetUp(e) {
+  const d = sheetDrag; if (!d || e.pointerId !== d.id) return;
+  sheetDrag = null;
+  if (!d.moved) return;                                  // a tap: the button's own click deals with it
+  swallowClick = true; setTimeout(() => { swallowClick = false; }, 0);
+  studioEl.classList.remove('dragging');
+  const px = sheetShown(), [t0, y0] = d.trail[0], v = (e.clientY - y0) / Math.max(1, e.timeStamp - t0);   // px per ms, down is +
+  const order = ['low', 'half', 'full'], hs = d.hs;
+  let s = order.reduce((a, b) => (Math.abs(hs[b] - px) < Math.abs(hs[a] - px) ? b : a));
+  if (Math.abs(v) > 0.45) s = v < 0 ? order.find(k => hs[k] > px + 1) || 'full' : [...order].reverse().find(k => hs[k] < px - 1) || 'low';
+  sheetTo(s);
+}
+document.addEventListener('pointerup', sheetUp);
+document.addEventListener('pointercancel', sheetUp);
+side.addEventListener('click', (e) => { if (swallowClick) { e.stopPropagation(); e.preventDefault(); } }, true);
+/* The sheet's line when it rests low: what's open and its gist. Names come from storage: set as text. */
+function renderPeek() {
+  if (!studio) return;
+  const [t, s] = peekInfo();
+  $('peek-t').textContent = t; $('peek-s').textContent = s;
+}
+function peekInfo() {
+  const st = studio, h = st.home, r = st.room;
+  if (tool === 'measure') { const [a, b] = st.measure || []; return ['Measure', !a ? 'Tap a face, then a second one' : !b ? 'Now tap the second face' : `${cm(measureBetween(a, b).d)} cm`]; }
+  if (tool === 'paint') {
+    const p = paintSums(), n = p.rows.length;
+    return ['Paint', n ? `${n} surface${n === 1 ? '' : 's'} · ${p.tins} tin${p.tins === 1 ? '' : 's'} of ${st.paint.tinL.toLocaleString(undefined, { maximumFractionDigits: 1 })} L` : 'Tap walls or furniture to add them'];
+  }
+  const f = selId && findItem(selId);
+  if (f) return [f.it.p.name, `${cm(f.it.p.w)} × ${cm(f.it.p.d)} × ${cm(f.it.p.h)} cm`];
+  if (st.tab === 'list') return [st.mode === 'edit' ? 'Shopping' : r ? 'In this room' : 'In this home', `${euro(shopping(h).total)} in all`];
+  if (st.tab === 'flat' || !r) return ['Rooms', `${h.rooms.length} rooms · ${Math.round(homeArea(h))} m²`];
+  if (!st.node) return ['Room', `${sizeText(r)} · ${cm(r.h)} cm high · ${r.items.length} piece${r.items.length === 1 ? '' : 's'}`];
+  return [nodeName(st.node), nodeSummary(st.node)];
+}
+/* The ⋯ menu in the top bar: what most people need less often (Download, Take out of Explore). */
+function stMenu(open) {
+  const m = $('st-menu'), b = $('st-more'); if (!m || !b) return;
+  m.hidden = !open; b.setAttribute('aria-expanded', open);
+  if (open) m.querySelector('[role="menuitem"]').focus();
+}
+document.addEventListener('pointerdown', (e) => { if ($('st-menu') && !$('st-menu').hidden && !e.target.closest('.menuwrap')) stMenu(false); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && $('st-menu') && !$('st-menu').hidden) { stMenu(false); $('st-more').focus(); } });
+const PUB_ARROW = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 7-7 7 7"/><path d="M12 19V5"/></svg>';
+const DOTS = '<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>';
+const moreMenu = (items) => (items.length ? `<span class="menuwrap"><button type="button" class="rbtn" id="st-more" aria-label="More" title="More" aria-haspopup="menu" aria-expanded="false" aria-controls="st-menu">${DOTS}</button>
+  <div class="menu" id="st-menu" role="menu" aria-labelledby="st-more" hidden>${items.join('')}</div></span>` : '');
+/* The round buttons have their names beside them on the first visit, until one is tapped or a few seconds pass. */
+let namesTimer = 0;
+function nameTools() {
+  try { if (localStorage.getItem('nido-tools-named') === '1') return; } catch (e) { return; }
+  studioEl.classList.add('named');
+  clearTimeout(namesTimer); namesTimer = setTimeout(endNames, 6000);
+}
+function endNames() {
+  clearTimeout(namesTimer);
+  if (!studioEl.classList.contains('named')) return;
+  studioEl.classList.remove('named');
+  try { localStorage.setItem('nido-tools-named', '1'); } catch (e) {}
+}
+for (const el of studioEl.querySelectorAll('.rbtn')) el.addEventListener('click', endNames);
+$('st-fit').addEventListener('click', () => { if (studio) resetView(true); });
 function changed(rebuild) {
   if (!studio || studio.mode !== 'edit') return;
   if (rebuild) { buildRoom(); showSelection(); }
@@ -704,49 +828,57 @@ function flushSave() {
 engineHooks.onChange = () => { changed(false); if (studio && studio.tab === 'room') renderPane(); };
 engineHooks.onRoomTap = (id) => { if (studio) focusRoom(id); };
 engineHooks.onRoomMoved = (id, done) => { if (done) { changed(false); if (studio && studio.tab === 'flat') renderPane(); } };
-/* A piece tapped in the room: its panel opens, and the tree marks it (a wall's page stays as it is). */
+/* A piece selected (on the way down, in the tree): its panel opens, and the tree marks it (a wall's page stays as it is). */
 engineHooks.onSelect = (id) => { renderProps(); if (studio && (studio.tab !== 'room' || !studio.node || studio.node === 'furniture')) renderPane(); };
-/* A wall tapped in the room opens its page. The view stays put: "Zoom to this wall" moves it. */
+/* A tap, not a drag, on a piece raises the sheet to show its panel; dragging it leaves the sheet where it is, so the room doesn't
+   slide under the finger. */
+engineHooks.onItemTap = () => { if (studio && selId) raiseSheet(); };     // (arranging rooms in the plan selects nothing)
+/* A wall tapped in the room opens its page (and raises the sheet on phones). "Zoom to this wall" moves the view. */
 engineHooks.onWall = (roomId, wid) => {
   if (!studio || studio.mode !== 'edit') return;
   if (!studio.room || studio.room.id !== roomId) focusRoom(roomId);
+  if (selId) selectItem(null);           // the wall's page, not the piece's panel
   setNode('wall:' + wid); studio.tab = 'room'; renderStudio(); $('pane').scrollTop = 0;
+  raiseSheet();
 };
-engineHooks.onMode = (m) => { $('v-3d').setAttribute('aria-pressed', m === '3d'); $('v-plan').setAttribute('aria-pressed', m === 'plan'); };
-$('v-3d').addEventListener('click', () => { if (mode === '3d') resetView(); setMode('3d'); });
-$('v-plan').addEventListener('click', () => setMode('plan'));
-$('t-day').addEventListener('click', () => { studio.home.evening = false; syncLamps(); syncTod(); changed(false); });
-$('t-eve').addEventListener('click', () => { studio.home.evening = true; syncLamps(); syncTod(); changed(false); });
-const syncTod = () => { $('t-day').setAttribute('aria-pressed', !studio.home.evening); $('t-eve').setAttribute('aria-pressed', !!studio.home.evening); };
-$('st-name').addEventListener('input', (e) => {
-  if (!studio || studio.mode !== 'edit') return;
-  studio.home.name = e.target.value.slice(0, 60) || 'Untitled home';
-  if (studio.home.rooms.length === 1) studio.home.rooms[0].name = studio.home.name;
-  changed(false);
-});
+/* Empty floor tapped on a phone: whatever was picked is let go (a piece, a wall's page) and the sheet goes back down. */
+engineHooks.onBlankTap = () => {
+  if (!studio || !isSheet()) return;
+  const k = studio.node ? studio.node.split(':')[0] : '';
+  if (['wall', 'part', 'frames', 'rail', 'op'].includes(k)) { studio.node = null; renderPane(); }
+  if (sheet !== 'low') sheetTo('low');
+};
+/* How the room is shown: one round toggle, Plan view, and 3D when it's off. */
+engineHooks.onMode = (m) => { $('v-plan').setAttribute('aria-pressed', m === 'plan'); };
+$('v-plan').addEventListener('click', () => setMode(mode === 'plan' ? '3d' : 'plan'));
+/* The evening light: a setting, so an icon toggle (the moon fills when it's on). */
+$('t-eve').addEventListener('click', () => { if (!studio) return; studio.home.evening = !studio.home.evening; syncLamps(); syncTod(); changed(false); });
+const syncTod = () => { $('t-eve').setAttribute('aria-pressed', !!studio.home.evening); };
 
 function renderStudio() {
   const st = studio, h = st.home, r = st.room, edit = st.mode === 'edit';
-  $('st-name').value = h.name; $('st-name').readOnly = !edit;
-  $('st-size').textContent = r ? `${sizeText(r)} · ${cm(r.h)} high` : `${h.rooms.length} rooms · ${Math.round(homeArea(h))} m²`;
-  $('st-room').innerHTML = `<option value="">${h.rooms.length > 1 ? 'Whole home' : 'Whole home · add rooms'}</option>` + h.rooms.map(x => `<option value="${esc(x.id)}" ${r && r.id === x.id ? 'selected' : ''}></option>`).join('');
+  /* the bar: the room's name (the home's for the whole home), a menu of the rooms when there are several, and under it "Saved" or
+     whose room it is */
+  $('st-title').textContent = r ? r.name : h.name;
+  $('st-name').classList.toggle('rooms', h.rooms.length > 1);
+  $('st-room').innerHTML = '<option value="">Whole home</option>' + h.rooms.map(x => `<option value="${esc(x.id)}" ${r && r.id === x.id ? 'selected' : ''}></option>`).join('');
   [...$('st-room').options].slice(1).forEach((o, i) => { o.textContent = h.rooms[i].name; });
   if (!r) $('st-room').value = '';
+  const sub = $('st-sub');
+  if (edit) { sub.innerHTML = '<span id="st-save"></span>'; $('st-save').textContent = S.local ? 'Saved in this browser' : 'Saved'; }
+  else { sub.innerHTML = `<span class="owner" data-owner="${esc(st.owner)}"><img alt="" hidden><span></span></span>`; fillOwners(sub); }
   syncTod();
   syncTools();
-  const acts = $('st-actions');
+  const acts = $('st-actions'), more = [];
+  if (S.downloads) more.push('<button type="button" role="menuitem" id="st-dl">Download</button>');
   if (edit) {
     const canPub = !S.local && S.db;
-    acts.innerHTML = `<span class="save-state" id="st-save">${S.local ? 'Saved in this browser' : 'Saved'}</span>
-      ${h.published ? '<button type="button" class="btn small" id="st-unpub">Unpublish</button>' : ''}
-      ${S.downloads ? '<button type="button" class="btn small" id="st-dl">Download</button>' : ''}
-      <button type="button" class="btn small primary" id="st-pub" ${canPub ? '' : 'disabled title="Publishing needs Contributor access"'}>${h.published ? 'Update in Explore' : 'Publish'}</button>`;
+    if (h.published) more.push('<button type="button" role="menuitem" id="st-unpub">Take out of Explore</button>');
+    const pub = h.published ? 'Update in Explore' : 'Publish';
+    acts.innerHTML = moreMenu(more) + `<button type="button" class="rbtn primary" id="st-pub" title="${canPub ? pub : 'Publishing needs Contributor access'}" ${canPub ? '' : 'disabled'}>${PUB_ARROW}<span class="vh">${pub}</span></button>`;
   } else {
-    acts.innerHTML = `<span class="owner save-state" data-owner="${esc(st.owner)}"><img alt="" hidden><span></span></span>
-      ${S.isAdmin && st.owner !== S.uid ? '<button type="button" class="btn small danger" id="st-remove">Remove from Explore</button>' : ''}
-      ${S.downloads ? '<button type="button" class="btn small" id="st-dl">Download</button>' : ''}
-      <button type="button" class="btn small primary" id="st-copy">Copy to my homes</button>`;
-    fillOwners(acts);
+    if (S.isAdmin && st.owner !== S.uid) more.push('<button type="button" role="menuitem" class="danger" id="st-remove">Remove from Explore</button>');
+    acts.innerHTML = moreMenu(more) + '<button type="button" class="btn small primary" id="st-copy"><span class="lbl-long">Copy to my homes</span><span class="lbl-short">Copy</span></button>';
   }
   const tabs = !edit ? [['list', r ? 'In this room' : 'In this home']] : r ? [['room', 'Room'], ['list', 'Shopping']] : [['flat', 'Rooms'], ['list', 'Shopping']];
   if (!tabs.some(([k]) => k === st.tab)) st.tab = tabs[0][0];
@@ -761,12 +893,14 @@ function syncTools() {
     : !r ? (edit && h.rooms.length > 1 ? 'Tap a room to work on it on its own · in Plan view, drag rooms to arrange them' : 'Tap a room to see it on its own · drag to look around')
     : edit ? 'Drag furniture to move it · tap a wall to change its finish · drag empty space to look around' : 'Drag to look around · tap a piece of furniture to see what it is';
 }
-$('st-tools').addEventListener('click', (e) => { const b = e.target.closest('[data-tool]'); if (b && studio) useTool(b.dataset.tool); });
+/* Measure and Paint are toggles: tapping the one that's on goes back to selecting (as does its panel's ×). */
+$('st-tools').addEventListener('click', (e) => { const b = e.target.closest('[data-tool]'); if (b && studio) useTool(tool === b.dataset.tool ? 'select' : b.dataset.tool); });
 function useTool(t) {
   studio.measure = [];                // before setTool: it clears the selection, which redraws the panel
   if (!studio.paint) studio.paint = { surfaces: [], coats: 2, coverage: 10, tinL: 4 };
   setTool(t);
   syncTools(); renderProps(); syncWallMark();
+  if (t !== 'select' && isSheet() && sheet !== 'low') sheetTo('low');      // the room free to tap; the sheet's line keeps the result
 }
 $('side-tabs').addEventListener('click', (e) => {     // the Room tab, tapped again, goes back up to the tree
   const b = e.target.closest('[data-tab]'); if (!b) return;
@@ -776,8 +910,10 @@ $('side-tabs').addEventListener('click', (e) => {     // the Room tab, tapped ag
 $('st-actions').addEventListener('click', async (e) => {
   const b = e.target.closest('button'); if (!b) return;
   const st = studio;
+  if (b.id === 'st-more') { stMenu($('st-menu').hidden); return; }
+  if (b.closest('#st-menu') && b.id !== 'st-remove') stMenu(false);      // Remove asks again, so its menu stays open
   if (b.id === 'st-pub') {
-    b.disabled = true; b.textContent = 'Publishing…';
+    b.disabled = true; if ($('st-save')) $('st-save').textContent = 'Publishing…';
     selectItem(null);
     try { await publish(st.id, st.home, await captureCover()); toast('Published. It’s in Explore with a picture of this view.'); }
     catch (er) { toast('Couldn’t publish. Check your access and try again.'); }
@@ -808,6 +944,7 @@ function renderPane() {
   p.scrollTop = keep;
   if (studio.tab === 'list') fillListNames();
   syncWallMark();
+  renderPeek();
 }
 /* Tint the wall (or the part of it) whose page is open: a wall, one of its parts, its mouldings, its rail, or a window on it.
    Nothing on the tree, the other pages, or with Measure or Paint on. */
@@ -822,7 +959,8 @@ const numField = (label, act, val, extra = '', unit = 'cm', attrs = '') => `<lab
 let armedRoom = null;
 function flatPane() {
   const h = studio.home;
-  return `<div class="sec-h">Rooms · ${h.rooms.length} · ${Math.round(homeArea(h))} m²</div>
+  return `<label class="field"><span>Home name</span><span class="in"><input data-act="hname" maxlength="60" value="${esc(h.name)}"></span></label>
+    <div class="sec-h">Rooms · ${h.rooms.length} · ${Math.round(homeArea(h))} m²</div>
     <div class="list">${h.rooms.map(r => `<button type="button" class="lrow" data-act="focus" data-id="${esc(r.id)}"><span class="thumb" style="display:grid;place-items:center;font-size:10px;font-weight:800;color:var(--muted);line-height:1.1;text-align:center">${Math.round(r.w * r.l)}<br>m²</span>
       <span class="tx"><b data-fill="${fills.push(r.name) - 1}"></b><small class="num">${sizeText(r)} · ${r.items.length} piece${r.items.length === 1 ? '' : 's'}</small></span></button>`).join('')}</div>
     <button type="button" class="btn primary" data-act="addroom">Add a room</button>
@@ -904,6 +1042,26 @@ const finishPic = (f) => ({ style: f.type === 'image' && f.img ? `background-ima
 const framesText = (z) => (FRAME_STYLES.find(([k]) => k === z.style) || ['', 'Mouldings'])[1] + (z.style === 'mould' && z.moulding ? ` · ${z.moulding.name}` : '');
 const railText = (cfg) => (RAIL_STYLES.find(([k]) => k === cfg.railStyle) || ['', 'Rail'])[1] + (cfg.railStyle === 'straight' && cfg.railM ? ` · ${cfg.railM.name}` : '');
 const opText = (o) => `${cm(o.w)} × ${cm(o.h)} cm, ${cm(o.off)} cm from the left`;
+/* A wall's finish: once when both parts of a split wall have the same one. */
+function wallText(cfg) {
+  if (cfg.layout !== 'split') return finishText(cfg.lo.f);
+  const hi = finishText(cfg.hi.f), lo = finishText(cfg.lo.f);
+  return hi === lo ? hi : `${hi}, over ${lo.toLowerCase()}`;
+}
+/* A page's gist, as its line in the tree says it (the sheet's line shows it when the sheet rests low). */
+function nodeSummary(n) {
+  const [k, a, b] = n.split(':'), r = studio.room, cfg = r.walls[a];
+  if (k === 'room') return `${sizeText(r)} · ${cm(r.h)} cm high`;
+  if (k === 'floor') return r.flooring ? r.flooring.name : FLOORS[r.floor][0];
+  if (k === 'furniture') return r.items.length ? `${r.items.length} piece${r.items.length === 1 ? '' : 's'}` : 'None yet';
+  if (k === 'op') { const o = r.openings.find(x => x.id === a); return o ? opText(o) : ''; }
+  if (!cfg) return '';
+  if (k === 'wall') return wallText(cfg);
+  if (k === 'part') return cfg[b] ? finishText(cfg[b].f) : '';
+  if (k === 'frames') return cfg[b] ? framesText(cfg[b]) : '';
+  if (k === 'rail') return railText(cfg);
+  return '';
+}
 /* What hangs on a wall, as lines of the tree: its windows, doors and radiators, then its parts and their mouldings, then the rail. */
 function wallKids(r, wid) {
   const cfg = r.walls[wid], split = cfg.layout === 'split', out = [];
@@ -920,8 +1078,7 @@ function roomTree() {
   const r = studio.room, fl = r.flooring, n = r.items.length;
   const walls = WALL_IDS.map(wid => {
     const cfg = r.walls[wid], split = cfg.layout === 'split', kids = wallKids(r, wid);
-    return tnode('wall:' + wid, finishPic(cfg[split ? 'hi' : 'lo'].f), WALL_NAMES[wid], split ? `${finishText(cfg.hi.f)}, over ${finishText(cfg.lo.f).toLowerCase()}` : finishText(cfg.lo.f))
-      + (kids ? `<div class="tgroup">${kids}</div>` : '');
+    return tnode('wall:' + wid, finishPic(cfg[split ? 'hi' : 'lo'].f), WALL_NAMES[wid], wallText(cfg)) + (kids ? `<div class="tgroup">${kids}</div>` : '');
   }).join('');
   const items = r.items.map(it => `<button type="button" class="tnode" data-act="sel" data-id="${it.id}" aria-pressed="${selId === it.id}">
       <span class="thumb" style="${it.p.photo ? `background-image:url(${assetSrc(it.p.photo)})` : `background:${it.p.color}`}"></span>
@@ -1394,7 +1551,12 @@ async function paneEvent(e) {
     r[k] = v;
     Object.assign(r, cleanRoom(r), { items: r.items });
     for (const it of r.items) { const c = clampItem(r, it); it.x = c.x; it.z = c.z; }
-    changed(true); layoutStudio(); resetView(); renderStudio(); return;
+    changed(true); resetView(); renderStudio(); return;
+  }
+  if (act === 'hname' && type === 'change') {          // the home's name (a single room's is its room's, set on its page)
+    studio.home.name = t.value.trim().slice(0, 60) || 'Untitled home';
+    if (studio.home.rooms.length === 1) studio.home.rooms[0].name = studio.home.name;
+    changed(false); renderStudio(); return;
   }
   if (act === 'pickfloor') {             // one of Nido's floors, or a shop's
     pickMaterial({ kind: 'flooring', title: 'Floor', list: [...nidoFloors(), ...allProducts().filter(p => p.kind === 'flooring')], cur: r.flooring ? r.flooring.ref : 'nido:floor:' + r.floor,
@@ -1455,7 +1617,7 @@ async function paneEvent(e) {
   // walls
   const wid = studio.wall, cfg = r.walls[wid], z = zoneOf(), part = cfg.layout === 'split' ? studio.part : 'lo';
   if (act === 'wallzoom') { flyTo(studio.wall); return; }
-  if (act === 'wallroom') { setMode('3d'); resetView(); return; }
+  if (act === 'wallroom') { setMode('3d'); resetView(true); return; }
   if (act === 'layout') { cfg.layout = t.dataset.v; if (cfg.layout === 'split') studio.part = 'hi'; changed(true); rerender(); return; }
   if (act === 'split' && type === 'change') { const v = +t.value / 100; if (v >= 0.2 && v <= r.h - 0.1) cfg.split = v; changed(true); rerender(); return; }
   if (act === 'railStyle') { cfg.railStyle = t.dataset.v; changed(true); rerender(); return; }
@@ -1740,6 +1902,12 @@ function furnitureArea(it, room) {
   const { w, d, h } = it.p;
   return w * d + 2 * (w + d) * h;
 }
+/* The surfaces chosen with Paint that still exist, their area in m², the litres for the coats asked and the tins to buy. */
+function paintSums() {
+  const P = studio.paint, rows = P.surfaces.map(s => ({ s, i: surfaceInfo(s) })).filter(x => x.i);
+  const area = rows.reduce((t, x) => t + x.i.area, 0), litres = area * P.coats / P.coverage;
+  return { rows, area, litres, tins: area > 0.01 ? Math.ceil(litres / P.tinL - 1e-6) : 0 };
+}
 function toolPanel(el) {
   const P = studio.paint, head = (t) => `<div style="display:flex;justify-content:space-between;gap:8px;align-items:start"><h3>${t}</h3><button type="button" class="btn small" data-tl="close" aria-label="Back to Select">×</button></div>`;
   const names = [];        // untrusted names (furniture, rooms), set as text below
@@ -1751,10 +1919,9 @@ function toolPanel(el) {
         <p class="note">${!b ? 'Now tap the second face.' : m.along ? 'Both points are on the same face, so this is the straight line between them.' : 'Measured straight out from the first face, so for two faces that look at each other it doesn’t matter where on the second you tap.'}</p>
         ${b ? '<p class="note">Tap again to start a new measurement.</p>' : ''}`);
   } else {
-    const rows = P.surfaces.map(s => ({ s, i: surfaceInfo(s) })).filter(x => x.i);
+    const { rows, area, litres, tins } = paintSums();
     P.surfaces = rows.map(x => x.s);
     markSurfaces(rows.map(x => x.i.mark));
-    const area = rows.reduce((t, x) => t + x.i.area, 0), litres = area * P.coats / P.coverage, tins = area > 0.01 ? Math.ceil(litres / P.tinL - 1e-6) : 0;
     const fmt = (v) => v.toLocaleString(undefined, { maximumFractionDigits: 1 });
     const field = (label, k, v, attrs, unit) => `<label class="field"><span>${label}</span><span class="in"><input type="number" inputmode="decimal" data-tl="${k}" value="${v}" ${attrs}><span class="u">${unit}</span></span></label>`;
     el.innerHTML = head('Paint') + (!rows.length ? '<p class="note">Tap walls or furniture to add them. Tap one again to take it off.</p>'
@@ -1780,7 +1947,13 @@ function toolEvent(e) {
     }, 0);
   }
 }
+/* The piece's or the tool's panel, then where it shows: on phones it takes the sheet's place, and the sheet's line follows it. */
 function renderProps() {
+  drawProps();
+  side.classList.toggle('with-props', !$('props').hidden && $('props').parentNode === side);
+  renderPeek();
+}
+function drawProps() {
   const el = $('props'), toolOn = !!studio && tool !== 'select';
   el.classList.toggle('tool', toolOn);
   if (toolOn) { el.hidden = false; toolPanel(el); return; }

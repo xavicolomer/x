@@ -314,7 +314,7 @@ function buildRoom() {                         // rebuild the whole home (doors 
   sun.shadow.camera.updateProjectionMatrix();
   syncItems();
   applyFocus();
-  layout();
+  applyOffset();
 }
 function applyFocus() {
   for (const [id, v] of views) v.group.visible = !focus || id === focus;
@@ -707,10 +707,11 @@ function showWall(m) {
 const canvas = renderer.domElement;
 const ray = new THREE.Raycaster(), ndc = new THREE.Vector2(), floorPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), hit = new THREE.Vector3();
 let drag = null, down = null;
-const engineHooks = { onSelect: () => {}, onWall: () => {}, onChange: () => {}, onRoomTap: () => {}, onRoomMoved: () => {}, onToolTap: () => {} };
+const engineHooks = { onSelect: () => {}, onWall: () => {}, onChange: () => {}, onRoomTap: () => {}, onRoomMoved: () => {}, onToolTap: () => {}, onItemTap: () => {}, onBlankTap: () => {} };
 function aim(e) {
   const r = canvas.getBoundingClientRect();
   ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+  cam.updateMatrixWorld();             // the camera may have moved (a fit, a glide) since the last frame was drawn
   ray.setFromCamera(ndc, cam);
 }
 const shown = (o) => { for (; o; o = o.parent) if (!o.visible) return false; return true; };
@@ -887,7 +888,8 @@ function endDrag(e) {
     const p = pick();
     if (p && p.wall) engineHooks.onWall(p.room, p.wall);
     else if (p && p.floor && !focus) { selectItem(null); engineHooks.onRoomTap(p.floor); }
-    else if (!p || p.floor) selectItem(null);
+    else if (!p || p.floor) { selectItem(null); engineHooks.onBlankTap(); }
+    else if (p.item) engineHooks.onItemTap(p.item);         // selected on the way down; a tap (not a drag) also opens its panel
   }
   down = null;
 }
@@ -903,16 +905,61 @@ pan.mouseButtons = { LEFT: THREE.MOUSE.PAN, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: TH
 pan.touches = { ONE: THREE.TOUCH.PAN, TWO: THREE.TOUCH.DOLLY_PAN };
 pan.minZoom = 0.3; pan.maxZoom = 6; pan.enabled = false;
 const controls = () => (mode === '3d' ? orbit : pan);
-let tween = null;
-function resetView() {
-  const b = homeBounds(), k = Math.max(b.w, b.l) / 3.4 * (stage.clientWidth / Math.max(1, stage.clientHeight) < 0.9 ? 1.5 : 1);
-  orbit.target.set(b.cx, 0.45, b.cz + 0.1);
-  persp.position.set(b.cx - 2.3 * k, 5.2 * k, b.cz + 4.3 * k);      // high, from the front left corner, looking over the furniture
-  orbit.update();
+let tween = null, selfMove = false;
+/* The room is drawn in the part of the stage the panels leave clear: padLeft is the side panel, padTop the top bar and padBottom the
+   bottom sheet on phones, in CSS pixels. The view's centre (padNow) eases after them, so the room glides when a panel moves; fitting
+   uses where the panels are going, not where they are on the way. ppm is the plan's scale, set when the view is fitted. */
+let padLeft = 0, padTop = 0, padBottom = 0, ppm = 100, autoFrame = true, lastFrame = 0;
+const padNow = { l: 0, t: 0, b: 0 };
+const VIEW_DIR = new THREE.Vector3(-2.3, 5.2, 4.3).normalize();      // high, from the front left corner, looking over the furniture
+function clearArea() {
+  const w = stage.clientWidth || window.innerWidth, h = stage.clientHeight || window.innerHeight;
+  return { w, h, vw: Math.max(1, w - padLeft), vh: Math.max(1, h - padTop - padBottom) };
+}
+/* The 3D view that frames the room, or the whole home: seen from VIEW_DIR, as close as it can be with every corner of the rooms' box
+   inside the clear area less a margin, then moved sideways so the box's picture sits in the middle (the distance to each corner
+   doesn't change when the camera moves across the view, so a few passes settle it). */
+function fitPersp() {
+  const b = homeBounds(), { h, vw, vh } = clearArea();
+  const f = h / 2 / Math.tan(THREE.MathUtils.degToRad(persp.fov) / 2);        // focal length, in pixels
+  const m = clamp(Math.min(vw, vh) * 0.06, 14, 36), hw = Math.max(20, vw / 2 - m), hh = Math.max(20, vh / 2 - m);
+  const d = VIEW_DIR, right = new THREE.Vector3(d.z, 0, -d.x).normalize(), up = new THREE.Vector3().crossVectors(d, right);
+  const pts = [], v = new THREE.Vector3(), t = new THREE.Vector3(b.cx, b.h * 0.35, b.cz);
+  for (const x of [b.x0, b.x1]) for (const y of [0, b.h]) for (const z of [b.z0, b.z1]) pts.push(new THREE.Vector3(x, y, z));
+  let dist = 0;
+  for (let pass = 0; ; pass++) {
+    dist = orbit.minDistance;
+    for (const p of pts) { v.subVectors(p, t); dist = Math.max(dist, v.dot(d) + f * Math.max(Math.abs(v.dot(right)) / hw, Math.abs(v.dot(up)) / hh)); }
+    if (pass === 3) break;
+    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;          // the box's picture, in pixels from the view's centre
+    for (const p of pts) {
+      v.subVectors(p, t);
+      const z = dist - v.dot(d), px = f * v.dot(right) / z, py = f * v.dot(up) / z;
+      x0 = Math.min(x0, px); x1 = Math.max(x1, px); y0 = Math.min(y0, py); y1 = Math.max(y1, py);
+    }
+    t.addScaledVector(right, (x0 + x1) / 2 * dist / f).addScaledVector(up, (y0 + y1) / 2 * dist / f);
+  }
+  return { t, p: t.clone().addScaledVector(d, Math.min(orbit.maxDistance, dist)) };
+}
+/* Frame the room in 3D, at once or gliding there. Until someone turns or zooms it (orbit 'change' below), the view stays the fitted
+   one: when a panel moves, it fits again. */
+function frame3d(glide) {
+  const fit = fitPersp();
+  autoFrame = true;
+  if (glide && mode === '3d' && running) { tween = { start: performance.now(), dur: 420, p0: persp.position.clone(), t0: orbit.target.clone(), p1: fit.p, t1: fit.t }; return; }
+  tween = null; orbit.target.copy(fit.t); persp.position.copy(fit.p);
+  selfMove = true; orbit.update(); selfMove = false;
+}
+function fitPlan() { const b = homeBounds(), { vw, vh } = clearArea(); ppm = Math.min(vw / (b.w + 1.0), vh / (b.l + 1.0)); }
+function resetView(glide) {
+  frame3d(glide);
+  fitPlan();
+  const b = homeBounds();
   ortho.zoom = 1; ortho.position.set(b.cx, 14, b.cz); pan.target.set(b.cx, 0, b.cz);
   ortho.updateProjectionMatrix(); pan.update();
-  layout();
+  applyOffset();
 }
+orbit.addEventListener('change', () => { if (!selfMove) autoFrame = false; });
 function setMode(m) {
   mode = m; cam = m === '3d' ? persp : ortho;
   orbit.enabled = m === '3d'; pan.enabled = m === 'plan';
@@ -929,27 +976,44 @@ function flyTo(wid) {
   const r = roomById(focus); if (!r) return;
   ctx(r);
   const F = WALL_FRAME[wid](), len = wallLen(wid), c = roomOffset(r).add(wallPoint(wid, len / 2, 0));
-  const tanH = Math.tan(THREE.MathUtils.degToRad(persp.fov) / 2);
-  const dist = Math.max((H + 0.5) / (2 * tanH), (len + 0.7) / (2 * tanH * viewAspect));
+  const { h, vw, vh } = clearArea(), f = h / 2 / Math.tan(THREE.MathUtils.degToRad(persp.fov) / 2);
+  const dist = f * Math.max((H + 0.5) / vh, (len + 0.7) / vw);       // the whole wall and a margin, in the part the panels leave clear
+  autoFrame = false;
   tween = { start: performance.now(), dur: 650, p0: persp.position.clone(), t0: orbit.target.clone(),
     p1: c.clone().addScaledVector(F.n, dist).setY(H * 0.85), t1: c.clone().setY(H * 0.42) };
 }
-let viewAspect = 1.6, padLeft = 0, padBottom = 0;
-function layout() {
+/* Centre both cameras on the clear area: setViewOffset slides the picture without moving the camera (as a map's padding does). */
+function applyOffset() {
   const w = stage.clientWidth, h = stage.clientHeight;
   if (!w || !h) return;
-  renderer.setSize(w, h);
-  const ox = -padLeft / 2, oy = padBottom / 2, vw = w - padLeft, vh = h - padBottom, b = homeBounds();
-  viewAspect = Math.max(0.3, vw / Math.max(1, vh));
+  const ox = -padNow.l / 2, oy = (padNow.b - padNow.t) / 2;
   persp.aspect = w / h;
   persp.setViewOffset(w, h, ox, oy, w, h);
   persp.updateProjectionMatrix();
-  const ppm = Math.min(vw / (b.w + 1.0), vh / (b.l + 1.0));
   ortho.left = -w / 2 / ppm; ortho.right = w / 2 / ppm; ortho.top = h / 2 / ppm; ortho.bottom = -h / 2 / ppm;
   ortho.setViewOffset(w, h, ox, oy, w, h);
   ortho.updateProjectionMatrix();
 }
-new ResizeObserver(layout).observe(stage);
+/* The panels moved (padding in CSS pixels). how: nothing, and the view glides there; 'instant' (opening a room, a resize); 'live' (a
+   sheet following a finger: the centre follows at once, the framing waits for the sheet to come to rest). */
+let padStale = false;
+function setPads(l, t, b, how) {
+  const moved = l !== padLeft || t !== padTop || b !== padBottom;
+  padLeft = l; padTop = t; padBottom = b;
+  if (how) { padNow.l = l; padNow.t = t; padNow.b = b; applyOffset(); }
+  if (how === 'live') { padStale = padStale || moved; return; }
+  if ((moved || padStale) && autoFrame && running) frame3d(how !== 'instant');
+  padStale = false;
+}
+function resize() {
+  const w = stage.clientWidth, h = stage.clientHeight;
+  if (!w || !h) return;
+  renderer.setSize(w, h);
+  fitPlan();
+  if (autoFrame && running) frame3d(false);
+  applyOffset();
+}
+new ResizeObserver(resize).observe(stage);
 const tmpV = new THREE.Vector3();
 function updateWalls() {
   for (const w of walls) {
@@ -965,14 +1029,21 @@ function applyTheme() {
 window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme);
 new MutationObserver(applyTheme).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 let running = false;
-renderer.setAnimationLoop(() => {
+renderer.setAnimationLoop((now) => {
   if (!running || !HOME) return;
+  const dt = lastFrame ? Math.min(100, now - lastFrame) : 16;
+  lastFrame = now;
+  if (padNow.l !== padLeft || padNow.t !== padTop || padNow.b !== padBottom) {     // the view's centre follows a panel that moved
+    const a = 1 - Math.exp(-dt / 80);
+    for (const [k, v] of [['l', padLeft], ['t', padTop], ['b', padBottom]]) padNow[k] = Math.abs(v - padNow[k]) < 0.5 ? v : padNow[k] + (v - padNow[k]) * a;
+    applyOffset();
+  }
   if (tween && mode === '3d') {
     const t = Math.min(1, (performance.now() - tween.start) / tween.dur), e = 1 - Math.pow(1 - t, 3);
     persp.position.lerpVectors(tween.p0, tween.p1, e); orbit.target.lerpVectors(tween.t0, tween.t1, e);
+    selfMove = true; orbit.update(); selfMove = false;            // our own move, not someone turning the room
     if (t >= 1) tween = null;
-  }
-  if (mode === '3d') orbit.update(); else pan.update();
+  } else if (mode === '3d') orbit.update(); else pan.update();
   updateWalls();
   updateToolMarks();
   renderer.render(scene, cam);
@@ -1000,7 +1071,9 @@ function captureCover() {
     const out = document.createElement('canvas'); out.width = 960; out.height = 600;
     const ar = 960 / 600; let cw = sw, ch = sw / ar;
     if (ch > sh) { ch = sh; cw = sh * ar; }
-    out.getContext('2d').drawImage(src, (sw - cw) / 2, (sh - ch) / 2, cw, ch, 0, 0, 960, 600);
+    // around the middle of the part the panels leave clear, where the room is, not the middle of the screen
+    const k = sw / Math.max(1, stage.clientWidth), cx = (padNow.l + (stage.clientWidth - padNow.l) / 2) * k, cy = (padNow.t + (stage.clientHeight - padNow.t - padNow.b) / 2) * k;
+    out.getContext('2d').drawImage(src, clamp(cx - cw / 2, 0, sw - cw), clamp(cy - ch / 2, 0, sh - ch), cw, ch, 0, 0, 960, 600);
     selBox.visible = prevSel;
     out.toBlob(b => res(b), 'image/jpeg', 0.86);
   });
